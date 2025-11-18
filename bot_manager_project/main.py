@@ -138,15 +138,25 @@ async def register_cmd(interaction: discord.Interaction, secret_id: str):
     await register_user(user_id, max_bots)
     consume_secret(secret_id)
 
-    # Crée le dossier utilisateur et copie les scripts
+    # Crée le dossier utilisateur et copie les scripts et les dossiers utilitaires
     user_dir = os.path.join(USERS_DIR, str(user_id))
     os.makedirs(user_dir, exist_ok=True)
     scripts_dest_dir = os.path.join(user_dir, "scripts")
     os.makedirs(scripts_dest_dir, exist_ok=True)
 
-    for script_file in os.listdir(SCRIPTS_ADMIN_DIR):
-        if script_file.endswith('.py'):
-            shutil.copy(os.path.join(SCRIPTS_ADMIN_DIR, script_file), scripts_dest_dir)
+    # PARCOURS ET COPIE LES FICHIERS ET DOSSIERS
+    for item_name in os.listdir(SCRIPTS_ADMIN_DIR):
+        src_path = os.path.join(SCRIPTS_ADMIN_DIR, item_name)
+        dest_path = os.path.join(scripts_dest_dir, item_name)
+
+        if os.path.isfile(src_path) and src_path.endswith('.py'):
+            # Copie les fichiers .py directement
+            shutil.copy(src_path, scripts_dest_dir)
+        elif os.path.isdir(src_path):
+            # Copie les répertoires (comme 'utils') et leur contenu
+            # dirs_exist_ok=True permet de ne pas lever d'erreur si la destination existe déjà
+            # (bien que scripts_dest_dir soit créé vide ici, cela peut être utile pour la robustesse)
+            shutil.copytree(src_path, dest_path, dirs_exist_ok=True)
 
 
     await interaction.response.send_message(f"Vous êtes enregistré avec succès ! Max bots : {max_bots}. Utilisez `/add_bot` pour ajouter vos bots.", ephemeral=True)

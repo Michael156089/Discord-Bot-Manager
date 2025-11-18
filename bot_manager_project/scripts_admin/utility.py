@@ -1,9 +1,18 @@
 import discord
 from discord.ext import commands
-from datetime import datetime, timezone
-from utils.database import get_user_level, get_rank_role, get_prefix, init_database 
-from utils.converters import get_target_user_async 
 import os
+import sys
+from datetime import datetime, timezone
+
+# Adjust sys.path to include the project root for absolute imports
+current_file_dir = os.path.dirname(os.path.abspath(__file__))
+# Navigate up to the 'bot_manager_project' directory
+# From 'scripts' -> '<user_id>' -> 'utilisateurs' -> 'bot_manager_project'
+project_root_dir = os.path.abspath(os.path.join(current_file_dir, '../../..'))
+sys.path.insert(0, project_root_dir)
+
+from utils.database import get_user_level, get_rank_role, get_prefix, init_database
+from utils.converters import get_target_user_async
 
 TOKEN = os.getenv("BOT_TOKEN")
 
@@ -205,5 +214,7 @@ async def on_ready():
     await bot.add_cog(Utility(bot)) # Ajoute le cog Utility
 
 if __name__ == "__main__":
+    # La fonction init_database doit être appelée pour s'assurer que les tables sont créées
+    from .utils.database import init_database
     init_database() # <-- DÉCOMMENTÉ ET APPELÉ
     bot.run(TOKEN)

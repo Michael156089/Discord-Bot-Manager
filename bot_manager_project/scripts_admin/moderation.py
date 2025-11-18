@@ -2,10 +2,10 @@ import discord
 from discord.ext import commands
 import typing
 from datetime import datetime, timedelta
-from utils.database import get_user_permission_level, get_prefix, get_immunity_role, init_database # Imports absolus
-from utils.converters import get_target_user_async # Import absolu
-from utils.logger import log_action # Import absolu
-from utils.responses import get_random_response # Import absolu
+from .utils.database import get_user_permission_level, get_prefix, get_immunity_role
+from .utils.converters import get_target_user_async
+from .utils.logger import log_action
+from .utils.responses import get_random_response
 import os
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -276,5 +276,9 @@ async def on_ready():
     await bot.add_cog(Moderation(bot))
 
 if __name__ == "__main__":
-    init_database()
+    # La fonction init_database doit être appelée pour s'assurer que les tables sont créées
+    # Cela devrait être géré au niveau du Manager ou dans un mécanisme d'initialisation propre au bot.
+    # Pour un script indépendant, on peut l'appeler ici, mais il est préférable que le bot Manager gère la création des DB.
+    # from .utils.database import init_database
+    # init_database()
     bot.run(TOKEN)
