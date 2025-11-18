@@ -205,9 +205,5 @@ async def on_ready():
     await bot.add_cog(Utility(bot)) # Ajoute le cog Utility
 
 if __name__ == "__main__":
-    # La fonction init_database doit être appelée pour s'assurer que les tables sont créées
-    # Cela devrait être géré au niveau du Manager ou dans un mécanisme d'initialisation propre au bot.
-    # Pour un script indépendant, on peut l'appeler ici, mais il est préférable que le bot Manager gère la création des DB.
-    # from .utils.database import init_database
-    # init_database()
+    init_database() # <-- DÉCOMMENTÉ ET APPELÉ
     bot.run(TOKEN)

@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import os
 import asyncio
-import shutil # Ajout de shutil pour les opérations de copie de scripts si nécessaire, mais le main.py actuel ne l'utilise pas directement
+import shutil # <-- Assurez-vous que shutil est importé ici
 from config import BOT_MANAGER_TOKEN, ADMIN_IDS, USERS_DIR, SCRIPTS_ADMIN_DIR # Importe BOT_MANAGER_TOKEN et ADMIN_IDS de config
 from database import (
     init_db, # Importe init_db pour l'initialisation de la base de données du manager

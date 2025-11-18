@@ -5,7 +5,7 @@ from config import USERS_DIR, LOGS_DIR
 from encryption import decrypt_token
 
 active_processes = {}
-MAX_AUTO_RESTARTS = 3 # Nouvelle constante: limite de 3 redémarrages automatiques
+MAX_AUTO_RESTARTS = 3 
 
 # Fonction utilitaire pour configurer l'environnement et ouvrir le fichier de log
 def _setup_bot_environment(user_id: int, bot_name: str, decrypted_token: str):
