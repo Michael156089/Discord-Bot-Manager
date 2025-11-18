@@ -1,8 +1,8 @@
 import discord
 from discord.ext import commands
 from datetime import datetime, timezone
-from .utils.database import get_user_level, get_rank_role, get_prefix
-from .utils.converters import get_target_user_async
+from utils.database import get_user_level, get_rank_role, get_prefix, init_database 
+from utils.converters import get_target_user_async 
 import os
 
 TOKEN = os.getenv("BOT_TOKEN")

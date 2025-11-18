@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
-from .utils.responses import get_random_response
-from .utils.database import (
+from utils.responses import get_random_response
+from utils.database import (
     get_user_permission_level,
     set_guild_prefix,
     set_rank_role,
@@ -14,7 +14,8 @@ from .utils.database import (
     set_log_channel,
     set_permission_role,
     remove_permission_role,
-    get_permission_roles
+    get_permission_roles,
+    init_database # Importe init_database ici
 )
 import os
 
@@ -189,8 +190,6 @@ async def on_ready():
 
 if __name__ == "__main__":
     # La fonction init_database doit être appelée pour s'assurer que les tables sont créées
-    # Cela devrait être géré au niveau du Manager ou dans un mécanisme d'initialisation propre au bot.
-    # Pour un script indépendant, on peut l'appeler ici, mais il est préférable que le bot Manager gère la création des DB.
-    # from .utils.database import init_database
-    # init_database()
+    from utils.database import init_database
+    init_database() # <-- DÉCOMMENTÉ ET APPELÉ
     bot.run(TOKEN)
