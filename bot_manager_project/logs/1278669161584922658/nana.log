@@ -1,0 +1,16 @@
+Traceback (most recent call last):
+  File "c:\Users\julien\Manager\bot_manager_project\utilisateurs\1278669161584922658\scripts\moderation.py", line 5, in <module>
+    from .utils.database import get_user_permission_level, get_prefix, get_immunity_role
+ImportError: attempted relative import with no known parent package
+Traceback (most recent call last):
+  File "c:\Users\julien\Manager\bot_manager_project\utilisateurs\1278669161584922658\scripts\moderation.py", line 5, in <module>
+    from .utils.database import get_user_permission_level, get_prefix, get_immunity_role
+ImportError: attempted relative import with no known parent package
+Traceback (most recent call last):
+  File "c:\Users\julien\Manager\bot_manager_project\utilisateurs\1278669161584922658\scripts\moderation.py", line 5, in <module>
+    from .utils.database import get_user_permission_level, get_prefix, get_immunity_role
+ImportError: attempted relative import with no known parent package
+Traceback (most recent call last):
+  File "c:\Users\julien\Manager\bot_manager_project\utilisateurs\1278669161584922658\scripts\moderation.py", line 5, in <module>
+    from .utils.database import get_user_permission_level, get_prefix, get_immunity_role
+ImportError: attempted relative import with no known parent package
