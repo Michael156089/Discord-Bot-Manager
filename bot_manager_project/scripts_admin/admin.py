@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
-from utils.responses import get_random_response
-from utils.database import (
+from .utils.responses import get_random_response
+from .utils.database import (
     get_user_permission_level,
     set_guild_prefix,
     set_rank_role,
@@ -16,6 +16,15 @@ from utils.database import (
     remove_permission_role,
     get_permission_roles
 )
+import os
+
+TOKEN = os.getenv("BOT_TOKEN")
+
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 
 def check_permission_level(required_level):
@@ -173,6 +182,15 @@ class Admin(commands.Cog):
         embed.description = description
         await ctx.send(embed=embed)
 
-
-async def setup(bot):
+@bot.event
+async def on_ready():
+    print(f"Bot Admin connecté: {bot.user}")
     await bot.add_cog(Admin(bot))
+
+if __name__ == "__main__":
+    # La fonction init_database doit être appelée pour s'assurer que les tables sont créées
+    # Cela devrait être géré au niveau du Manager ou dans un mécanisme d'initialisation propre au bot.
+    # Pour un script indépendant, on peut l'appeler ici, mais il est préférable que le bot Manager gère la création des DB.
+    # from .utils.database import init_database
+    # init_database()
+    bot.run(TOKEN)
