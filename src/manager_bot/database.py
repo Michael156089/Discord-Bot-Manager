@@ -1,7 +1,7 @@
 import aiosqlite
 import json
 from datetime import datetime, timedelta
-from config import DB_PATH, SECRETS_FILE
+from .config import DB_PATH, SECRETS_FILE
 import os
 import secrets
 

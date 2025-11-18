@@ -4,8 +4,8 @@ from discord import app_commands
 import os
 import asyncio
 import shutil # <-- Assurez-vous que shutil est importé ici
-from config import BOT_MANAGER_TOKEN, ADMIN_IDS, USERS_DIR, SCRIPTS_ADMIN_DIR # Importe BOT_MANAGER_TOKEN et ADMIN_IDS de config
-from database import (
+from ..config import BOT_MANAGER_TOKEN, ADMIN_IDS, USERS_DIR, SCRIPTS_ADMIN_DIR # Importe BOT_MANAGER_TOKEN et ADMIN_IDS de config
+from .database import (
     init_db, # Importe init_db pour l'initialisation de la base de données du manager
     create_secret,
     validate_secret,
@@ -21,8 +21,8 @@ from database import (
     revoke_user,
     get_user 
 )
-from encryption import encrypt_token, decrypt_token
-from bot_process import start_bot_process, stop_bot_process, get_bot_status, monitor_processes # monitor_processes est importé ici
+from .encryption import encrypt_token, decrypt_token
+from .bot_process import start_bot_process, stop_bot_process, get_bot_status, monitor_processes # monitor_processes est importé ici
 
 intents = discord.Intents.default()
 intents.message_content = True

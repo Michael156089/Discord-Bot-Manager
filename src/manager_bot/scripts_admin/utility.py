@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 
 # Adjust sys.path to include the project root for absolute imports
 current_file_dir = os.path.dirname(os.path.abspath(__file__))
-# Navigate up to the 'bot_manager_project' directory
-# From 'scripts' -> '<user_id>' -> 'utilisateurs' -> 'bot_manager_project'
+# Navigate up to the 'manager_bot' directory
+# From 'scripts_admin' -> 'manager_bot'
 project_root_dir = os.path.abspath(os.path.join(current_file_dir, '../../..'))
 sys.path.insert(0, project_root_dir)
 

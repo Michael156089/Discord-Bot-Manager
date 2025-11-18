@@ -1,8 +1,8 @@
 import subprocess
 import os
 import asyncio
-from config import USERS_DIR, LOGS_DIR
-from encryption import decrypt_token
+from .config import USERS_DIR, LOGS_DIR
+from .encryption import decrypt_token
 
 active_processes = {}
 MAX_AUTO_RESTARTS = 3 
@@ -83,7 +83,7 @@ def get_bot_status(user_id: int, bot_name: str):
 async def monitor_processes(bot_manager):
     while True:
         await asyncio.sleep(30) # Vérifie toutes les 30 secondes
-        from database import get_bot, update_bot_status # Importation nécessaire ici
+        from .database import get_bot, update_bot_status # Importation nécessaire ici
 
         for key in list(active_processes.keys()): # Itère sur une copie des clés pour éviter des erreurs si `active_processes` est modifié
             process_info = active_processes[key]

@@ -1,4 +1,4 @@
-from config import cipher
+from .config import cipher
 
 def encrypt_token(token: str) -> str:
     return cipher.encrypt(token.encode()).decode()
