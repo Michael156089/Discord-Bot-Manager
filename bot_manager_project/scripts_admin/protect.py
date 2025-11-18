@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands
 import os
-from utils.database import init_database
 
 TOKEN = os.getenv("BOT_TOKEN")
 
@@ -13,7 +12,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"[Bot Protection] Bot Protection connecté: {bot.user}")
+    print(f"Bot Protection connecte: {bot.user}")
 
 @bot.event
 async def on_member_join(member):
@@ -37,6 +36,4 @@ async def on_message(message):
     
     await bot.process_commands(message)
 
-if __name__ == "__main__":
-    init_database()
-    bot.run(TOKEN)
+bot.run(TOKEN)

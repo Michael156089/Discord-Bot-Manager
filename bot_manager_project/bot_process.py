@@ -5,7 +5,7 @@ from config import USERS_DIR, LOGS_DIR
 from encryption import decrypt_token
 
 active_processes = {}
-MAX_AUTO_RESTARTS = 3
+MAX_AUTO_RESTARTS = 3 
 
 # Fonction utilitaire pour configurer l'environnement et ouvrir le fichier de log
 def _setup_bot_environment(user_id: int, bot_name: str, decrypted_token: str):
@@ -24,7 +24,6 @@ def _setup_bot_environment(user_id: int, bot_name: str, decrypted_token: str):
     else:
         env["PYTHONPATH"] = scripts_dir
     
-    print(f"[BotProcess] Setup env for {bot_name}: scripts_dir={scripts_dir}, PYTHONPATH={env.get('PYTHONPATH', 'N/A')}, log_file={log_file_path}") # Ajout de print
     # On retourne le descripteur de fichier ouvert pour le subprocess
     return user_dir, log_file_path, env
 
@@ -33,7 +32,6 @@ def start_bot_process(user_id: int, bot_name: str, bot_token: str, script: str):
     
     # Arrête le processus existant si présent pour ce bot
     if key in active_processes and active_processes[key]["process"].poll() is None:
-        print(f"[BotProcess] Arrêt du processus existant pour {bot_name} avant le démarrage.") # Ajout de print
         active_processes[key]["process"].terminate()
         try: active_processes[key]["process"].wait(timeout=5)
         except subprocess.TimeoutExpired: active_processes[key]["process"].kill()
@@ -42,40 +40,31 @@ def start_bot_process(user_id: int, bot_name: str, bot_token: str, script: str):
     user_dir, log_file_path, env = _setup_bot_environment(user_id, bot_name, decrypted_token)
     script_path = os.path.join(user_dir, "scripts", script)
 
-    try:
-        print(f"[BotProcess] Démarrage de '{bot_name}' (script: '{script_path}', cwd: '{user_dir}').") # Ajout de print
-        # Ouvre le fichier de log pour le nouveau subprocess
-        with open(log_file_path, "a") as log:
-            process = subprocess.Popen(
-                ["python", script_path],
-                env=env,
-                stdout=log,
-                stderr=log,
-                cwd=user_dir # Le cwd est le dossier de l'utilisateur, pas le dossier scripts
-            )
-        # Initialise ou réinitialise le compteur de redémarrages automatiques pour un démarrage manuel
-        active_processes[key] = {"process": process, "auto_restart_count": 0}
-        print(f"[BotProcess] Processus de '{bot_name}' démarré avec PID: {process.pid}.") # Ajout de print
-        return process
-    except Exception as e:
-        print(f"[BotProcess] ÉCHEC Démarrage de '{bot_name}': {e}") # Ajout de print
-        raise # Relève l'exception pour qu'elle soit gérée par le Manager
+    # Ouvre le fichier de log pour le nouveau subprocess
+    with open(log_file_path, "a") as log:
+        process = subprocess.Popen(
+            ["python", script_path],
+            env=env,
+            stdout=log,
+            stderr=log,
+            cwd=user_dir # Le cwd est le dossier de l'utilisateur, pas le dossier scripts
+        )
+    
+    # Initialise ou réinitialise le compteur de redémarrages automatiques pour un démarrage manuel
+    active_processes[key] = {"process": process, "auto_restart_count": 0}
+    return process
 
 def stop_bot_process(user_id: int, bot_name: str):
     key = f"{user_id}_{bot_name}"
     if key in active_processes:
         process = active_processes[key]["process"]
-        print(f"[BotProcess] Arrêt du processus de '{bot_name}' (PID: {process.pid}).") # Ajout de print
         process.terminate()
         try:
             process.wait(timeout=5)
-            print(f"[BotProcess] Processus '{bot_name}' terminé proprement.") # Ajout de print
         except subprocess.TimeoutExpired:
             process.kill()
-            print(f"[BotProcess] Processus '{bot_name}' tué après timeout.") # Ajout de print
-        del active_processes[key]
+        del active_processes[key] # Supprime le bot des processus actifs
         return True
-    print(f"[BotProcess] Tentative d'arrêt de '{bot_name}', mais processus non trouvé.") # Ajout de print
     return False
 
 def get_bot_status(user_id: int, bot_name: str):
@@ -92,7 +81,6 @@ def get_bot_status(user_id: int, bot_name: str):
     return "stopped" # N'est pas dans les processus actifs
 
 async def monitor_processes(bot_manager):
-    print("[BotProcess] Démarre la surveillance des processus de bot.") # Ajout de print
     while True:
         await asyncio.sleep(30) # Vérifie toutes les 30 secondes
         from database import get_bot, update_bot_status # Importation nécessaire ici
@@ -105,7 +93,6 @@ async def monitor_processes(bot_manager):
                 user_id, bot_name = key.split("_", 1)
                 user_id = int(user_id)
                 
-                print(f"[BotProcess] Détection d'arrêt de '{bot_name}' (PID: {process.pid}, Exit Code: {process.poll()}).") # Ajout de print
                 # Incrémente le compteur de redémarrages automatiques
                 process_info["auto_restart_count"] += 1
                 
@@ -114,7 +101,6 @@ async def monitor_processes(bot_manager):
                     try:
                         user = await bot_manager.fetch_user(user_id)
                         await user.send(f"⚠️ Votre bot `{bot_name}` s'est arrêté (tentative {process_info['auto_restart_count']}/{MAX_AUTO_RESTARTS}). Redémarrage automatique...")
-                        print(f"[BotProcess] Tentative de redémarrage automatique pour '{bot_name}' (tentative {process_info['auto_restart_count']}).") # Ajout de print
                         
                         bot_data = await get_bot(user_id, bot_name)
                         if bot_data:
@@ -133,9 +119,9 @@ async def monitor_processes(bot_manager):
                             active_processes[key]["process"] = new_process # Met à jour le processus Popen
                             await update_bot_status(user_id, bot_name, "running") # Met à jour le statut dans la DB
                             await user.send(f"✅ Bot `{bot_name}` redémarré avec succès.")
-                            print(f"[BotProcess] Redémarrage de '{bot_name}' réussi (PID: {new_process.pid}).") # Ajout de print
                     except Exception as e:
-                        print(f"[BotProcess] Erreur critique lors du redémarrage automatique de '{bot_name}': {e}") # Ajout de print
+                        # Si le redémarrage échoue, on continue le cycle pour potentiellement atteindre la limite
+                        print(f"Erreur lors du redémarrage automatique du bot {bot_name}: {e}")
                         await update_bot_status(user_id, bot_name, "crashed") # Marque comme crashé si le redémarrage échoue
                 else:
                     # Le bot a atteint la limite de redémarrages
@@ -143,8 +129,7 @@ async def monitor_processes(bot_manager):
                         user = await bot_manager.fetch_user(user_id)
                         await user.send(f"❌ Votre bot `{bot_name}` a atteint la limite de {MAX_AUTO_RESTARTS} redémarrages automatiques et a été arrêté. Veuillez vérifier vos logs pour les erreurs.")
                         await update_bot_status(user_id, bot_name, "crashed_permanently") # Statut permanent dans la DB
-                        print(f"[BotProcess] Bot '{bot_name}' a atteint la limite de redémarrages et est arrêté définitivement.") # Ajout de print
                     except Exception as e:
-                        print(f"[BotProcess] Erreur lors de l'envoi du message d'arrêt permanent pour '{bot_name}': {e}") # Ajout de print
+                        print(f"Erreur lors de l'envoi du message d'arrêt permanent pour {bot_name}: {e}")
                     finally:
                         del active_processes[key] # Supprime définitivement le bot de la surveillance
