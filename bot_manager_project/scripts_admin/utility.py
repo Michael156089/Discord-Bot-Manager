@@ -210,11 +210,9 @@ class Utility(commands.Cog): # Renommé de General à Utility
 
 @bot.event
 async def on_ready():
-    print(f"Bot Utilitaire connecté: {bot.user}")
+    print(f"[Bot Utilitaire] Bot Utilitaire connecté: {bot.user}") # Ajout de print
     await bot.add_cog(Utility(bot)) # Ajoute le cog Utility
 
 if __name__ == "__main__":
-    # La fonction init_database doit être appelée pour s'assurer que les tables sont créées
-    from .utils.database import init_database
-    init_database() # <-- DÉCOMMENTÉ ET APPELÉ
+    init_database()
     bot.run(TOKEN)
