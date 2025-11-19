@@ -1,0 +1,4 @@
+# ...existing entries...
+.env
+# optionally ignore logs or other sensitive data
+logs/
