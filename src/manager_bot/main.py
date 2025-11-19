@@ -13,7 +13,7 @@ from collections import defaultdict
 from .config import BOT_MANAGER_TOKEN, ADMIN_IDS, USERS_DIR, SCRIPTS_ADMIN_DIR 
 
 from .database import (
-    init_db, # Importe init_db pour l'initialisation de la base de données du manager
+    init_db,
     create_secret,
     validate_secret,
     consume_secret,
@@ -26,7 +26,8 @@ from .database import (
     delete_bot,
     get_all_users,
     revoke_user,
-    get_user 
+    get_user,
+    renew_user_account
 )
 from .encryption import encrypt_token, decrypt_token
 from .bot_process import start_bot_process, stop_bot_process, get_bot_status, monitor_processes # monitor_processes est importé ici
@@ -89,8 +90,10 @@ async def cleanup_expired_users():
     await delete_expired_users()
 
 # --- Fonctions utilitaires --- #
-def is_admin_check(interaction: discord.Interaction) -> bool:
-    return interaction.user.id in ADMIN_IDS
+def is_admin_check(ctx) -> bool:
+    """Check if user is admin (works for both Context and Interaction)."""
+    user = ctx.author if hasattr(ctx, 'author') else ctx.user
+    return user.id in ADMIN_IDS
 
 def is_registered_check(interaction: discord.Interaction) -> bool:
     return os.path.exists(os.path.join(USERS_DIR, str(interaction.user.id)))
@@ -136,9 +139,8 @@ async def on_ready():
 @app_commands.describe(target_user="L'utilisateur pour qui créer un secret", max_bots="Nombre maximum de bots")
 async def create_secret_cmd(ctx: commands.Context, target_user: discord.User, max_bots: int):
     # Permission check for both slash and prefix
-    if not is_admin_check(ctx.interaction if hasattr(ctx, 'interaction') and ctx.interaction else ctx):
-        # Silently ignore non-admins in prefix mode, respond in slash mode
-        if isinstance(ctx, commands.Context) and not ctx.interaction:
+    if not is_admin_check(ctx):
+        if not ctx.interaction:
             return  # Prefix mode: ignore silently
         await ctx.send("Vous n'êtes pas autorisé à utiliser cette commande.", ephemeral=True)
         return
@@ -157,8 +159,8 @@ async def create_secret_cmd(ctx: commands.Context, target_user: discord.User, ma
 
 @commands.hybrid_command(name="list_users", description="Lister tous les utilisateurs")
 async def list_users_cmd(ctx: commands.Context):
-    if not is_admin_check(ctx.interaction if hasattr(ctx, 'interaction') and ctx.interaction else ctx):
-        if isinstance(ctx, commands.Context) and not ctx.interaction:
+    if not is_admin_check(ctx):
+        if not ctx.interaction:
             return
         await ctx.send("Vous n'êtes pas autorisé à utiliser cette commande.", ephemeral=True)
         return
@@ -174,8 +176,8 @@ async def list_users_cmd(ctx: commands.Context):
 @commands.hybrid_command(name="revoke_user", description="Révoquer un utilisateur")
 @app_commands.describe(user_id="ID de l'utilisateur à révoquer")
 async def revoke_user_cmd(ctx: commands.Context, user_id: int):
-    if not is_admin_check(ctx.interaction if hasattr(ctx, 'interaction') and ctx.interaction else ctx):
-        if isinstance(ctx, commands.Context) and not ctx.interaction:
+    if not is_admin_check(ctx):
+        if not ctx.interaction:
             return
         await ctx.send("Vous n'êtes pas autorisé à utiliser cette commande.", ephemeral=True)
         return
@@ -257,9 +259,6 @@ async def renew_cmd(ctx: commands.Context, secret_id: str):
         await ctx.send("Ce secret n'est pas valide pour votre ID utilisateur.", ephemeral=True)
         return
     
-    # Check if user exists (even if revoked/expired)
-    from .database import renew_user_account
-    
     try:
         await renew_user_account(user_id, secret["max_bots"])
         consume_secret(secret_id)
@@ -272,12 +271,9 @@ async def renew_cmd(ctx: commands.Context, secret_id: str):
         await ctx.send(f"Erreur lors du renouvellement : {e}", ephemeral=True)
 
 @commands.hybrid_command(name="add_bot", description="Ajouter un bot")
-@app_commands.describe(nom="Nom du bot", token="Token du bot", script="Script à utiliser")
+@app_commands.describe(nom="Nom du bot", token="Token du bot", script="Script a utiliser")
 @app_commands.choices(script=[
-    app_commands.Choice(name="moderation.py", value="moderation.py"),
-    app_commands.Choice(name="protect.py", value="protect.py"),
-    app_commands.Choice(name="utility.py", value="utility.py"),
-    app_commands.Choice(name="admin.py", value="admin.py")
+    app_commands.Choice(name="utility.py", value="utility.py")
 ])
 async def add_bot_cmd(ctx: commands.Context, nom: str, token: str, script: str):
     if not is_valid_bot_name(nom):
@@ -497,8 +493,8 @@ async def bot_info_cmd(ctx: commands.Context, nom: str):
 
 @commands.hybrid_command(name="debug_bot_process", description="[ADMIN] Voir les processus actifs")
 async def debug_bot_process_cmd(ctx: commands.Context):
-    if not is_admin_check(ctx.interaction if hasattr(ctx, 'interaction') and ctx.interaction else ctx):
-        if isinstance(ctx, commands.Context) and not ctx.interaction:
+    if not is_admin_check(ctx):
+        if not ctx.interaction:
             return
         await ctx.send("Vous n'êtes pas autorisé.", ephemeral=True)
         return
