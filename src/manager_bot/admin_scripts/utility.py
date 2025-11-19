@@ -85,7 +85,8 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-bot = commands.Bot(command_prefix=PREFIX, intents=intents, description=config.get("DESCRIPTION", "Bot Utilitaire Discord"))
+# ✅ Désactiver la commande help par défaut pour éviter les conflits
+bot = commands.Bot(command_prefix=PREFIX, intents=intents, description=config.get("DESCRIPTION", "Bot Utilitaire Discord"), help_command=None)
 
 class Utility(commands.Cog):
     def __init__(self, bot):

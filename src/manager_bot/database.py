@@ -1,7 +1,6 @@
 import aiosqlite
-import json
 from datetime import datetime, timedelta
-from .config import DB_PATH, SECRETS_FILE
+from .config import DB_PATH
 import os
 import secrets
 import time
@@ -40,45 +39,29 @@ async def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     """)
+    await db.execute('''
+        CREATE TABLE IF NOT EXISTS secrets (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            max_bots INTEGER NOT NULL,
+            created_at REAL NOT NULL,
+            used INTEGER DEFAULT 0
+        )
+    ''')
     await db.commit()
 
-def load_secrets():
-    if os.path.exists(SECRETS_FILE):
-        with open(SECRETS_FILE, 'r') as f:
-            return json.load(f)
-    return {}
-
-def save_secrets(secrets_data):
-    with open(SECRETS_FILE, 'w') as f:
-        json.dump(secrets_data, f, indent=4)
-
-def create_secret(user_id: int, max_bots: int) -> str:
-    secrets_data = load_secrets()
-    secret_id = secrets.token_urlsafe(32)
-    expiration = (datetime.now() + timedelta(days=30)).isoformat()
-    
-    secrets_data[secret_id] = {
-        "user_id": user_id,
-        "max_bots": max_bots,
-        "expiration": expiration,
-        "consumed": False
-    }
-    
-    save_secrets(secrets_data)
-    return secret_id
-
-async def delete_expired_secrets():
-    """Delete secrets that have expired (older than 24 hours)."""
+async def create_secret(user_id: int, max_bots: int) -> str:
+    """Create a secret in SQL database (not JSON)."""
     db = await get_db()
+    secret_id = secrets.token_urlsafe(32)
     now = time.time()
-    expiry_threshold = now - (24 * 3600)  # 24 hours ago
     
     await db.execute(
-        "DELETE FROM secrets WHERE created_at < ?",
-        (expiry_threshold,)
+        "INSERT INTO secrets (id, user_id, max_bots, created_at, used) VALUES (?, ?, ?, ?, 0)",
+        (secret_id, user_id, max_bots, now)
     )
     await db.commit()
-    print(f"Expired secrets cleaned up at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    return secret_id
 
 async def validate_secret(secret_id: str):
     """Validate a secret and check if it's expired."""
@@ -106,10 +89,27 @@ async def validate_secret(secret_id: str):
     
     return {"user_id": user_id, "max_bots": max_bots}, None
 
-def consume_secret(secret_id: str):
-    secrets_data = load_secrets()
-    secrets_data[secret_id]["consumed"] = True
-    save_secrets(secrets_data)
+async def consume_secret(secret_id: str):
+    """Mark secret as used in database."""
+    db = await get_db()
+    await db.execute(
+        "UPDATE secrets SET used = 1 WHERE id = ?",
+        (secret_id,)
+    )
+    await db.commit()
+
+async def delete_expired_secrets():
+    """Delete secrets that have expired (older than 24 hours)."""
+    db = await get_db()
+    now = time.time()
+    expiry_threshold = now - (24 * 3600)
+    
+    await db.execute(
+        "DELETE FROM secrets WHERE created_at < ?",
+        (expiry_threshold,)
+    )
+    await db.commit()
+    print(f"Expired secrets cleaned up at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
 async def register_user(user_id: int, max_bots: int):
     """Register a user with 30-day expiration."""
@@ -152,7 +152,7 @@ async def delete_expired_users():
     db = await get_db()
     now = time.time()
     
-    # Find expired users
+    # Find expired users - utiliser 'id' qui est la clé primaire
     cursor = await db.execute(
         "SELECT id FROM users WHERE expires_at < ? AND revoked = 0",
         (now,)
@@ -167,7 +167,7 @@ async def revoke_user(user_id: int):
     """Mark user as revoked and stop all their bots."""
     db = await get_db()
     
-    # Stop all bots first
+    # Stop all bots first - utiliser 'user_id' qui existe
     cursor = await db.execute(
         "SELECT bot_name FROM bots WHERE user_id = ? AND status != 'deleted'",
         (user_id,)
@@ -178,7 +178,7 @@ async def revoke_user(user_id: int):
         from .bot_process import stop_bot_process
         stop_bot_process(user_id, bot_name)
     
-    # Mark user as revoked
+    # Mark user as revoked - utiliser 'id' qui est la clé primaire
     await db.execute(
         "UPDATE users SET revoked = 1 WHERE id = ?",
         (user_id,)

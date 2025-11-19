@@ -30,7 +30,7 @@ from .database import (
     renew_user_account
 )
 from .encryption import encrypt_token, decrypt_token
-from .bot_process import start_bot_process, stop_bot_process, get_bot_status, monitor_processes # monitor_processes est importé ici
+from .bot_process import start_bot_process, stop_bot_process, get_bot_status, monitor_processes
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -110,12 +110,14 @@ async def on_ready():
     await init_db() 
     print("Base de données du Manager initialisée.")
     
+    # ✅ Synchronisation des commandes slash se fait ici après la connexion du bot
     try:
-        # Synchronise les commandes slash avec l'API Discord
         synced = await bot.tree.sync()
-        print(f"Synchronisé {len(synced)} commandes slash.")
+        print(f"✅ Synchronisé {len(synced)} commandes slash.")
+        for cmd in synced:
+            print(f"  - /{cmd.name}")
     except Exception as e:
-        print(f"Erreur lors de la synchronisation des commandes slash: {e}")
+        print(f"❌ Erreur lors de la synchronisation des commandes slash: {e}")
 
     # Lance la tâche de surveillance des processus de bot
     bot.loop.create_task(monitor_processes(bot))
@@ -132,16 +134,19 @@ async def on_ready():
     
     bot.loop.create_task(cleanup_tasks())
 
+@commands.hybrid_command(name="ping", description="Verifie la latence du Bot Manager.")
+async def ping_cmd(ctx: commands.Context):
+    """Verifie la latence du Bot Manager."""
+    latency = round(bot.latency * 1000)
+    await ctx.send(f"Latence du Bot Manager: {latency}ms", ephemeral=True)
+
 
 # --- COMMANDES ADMIN (HYBRIDES) --- #
 
-@commands.hybrid_command(name="create_secret", description="Créer un secret pour un nouvel utilisateur")
+@bot.hybrid_command(name="create_secret", description="Créer un secret pour un nouvel utilisateur")
 @app_commands.describe(target_user="L'utilisateur pour qui créer un secret", max_bots="Nombre maximum de bots")
 async def create_secret_cmd(ctx: commands.Context, target_user: discord.User, max_bots: int):
-    # Permission check for both slash and prefix
     if not is_admin_check(ctx):
-        if not ctx.interaction:
-            return  # Prefix mode: ignore silently
         await ctx.send("Vous n'êtes pas autorisé à utiliser cette commande.", ephemeral=True)
         return
     
@@ -149,7 +154,7 @@ async def create_secret_cmd(ctx: commands.Context, target_user: discord.User, ma
         await ctx.send("Le nombre de bots doit être au minimum 1.", ephemeral=True)
         return
     
-    secret_id = create_secret(target_user.id, max_bots) 
+    secret_id = await create_secret(target_user.id, max_bots)
     try:
         await target_user.send(f"Votre secret pour le Bot Manager : `{secret_id}`. Utilisez-le rapidement !")
         await ctx.send(f"Secret créé et envoyé à {target_user.mention}.", ephemeral=True)
@@ -157,11 +162,9 @@ async def create_secret_cmd(ctx: commands.Context, target_user: discord.User, ma
         await ctx.send(f"Impossible d'envoyer un DM à {target_user.mention}. Secret créé : `{secret_id}`", ephemeral=True)
 
 
-@commands.hybrid_command(name="list_users", description="Lister tous les utilisateurs")
+@bot.hybrid_command(name="list_users", description="Lister tous les utilisateurs")
 async def list_users_cmd(ctx: commands.Context):
     if not is_admin_check(ctx):
-        if not ctx.interaction:
-            return
         await ctx.send("Vous n'êtes pas autorisé à utiliser cette commande.", ephemeral=True)
         return
 
@@ -173,12 +176,10 @@ async def list_users_cmd(ctx: commands.Context):
     user_list = "\n".join([f"ID: {user[0]}, Max Bots: {user[1]}, Inscrit le: {user[2]}" for user in users])
     await ctx.send(f"Utilisateurs:\n{user_list}", ephemeral=True)
 
-@commands.hybrid_command(name="revoke_user", description="Révoquer un utilisateur")
+@bot.hybrid_command(name="revoke_user", description="Révoquer un utilisateur")
 @app_commands.describe(user_id="ID de l'utilisateur à révoquer")
 async def revoke_user_cmd(ctx: commands.Context, user_id: int):
     if not is_admin_check(ctx):
-        if not ctx.interaction:
-            return
         await ctx.send("Vous n'êtes pas autorisé à utiliser cette commande.", ephemeral=True)
         return
 
@@ -203,10 +204,10 @@ async def revoke_user_cmd(ctx: commands.Context, user_id: int):
 
 # --- COMMANDES UTILISATEUR (HYBRIDES) --- #
 
-@commands.hybrid_command(name="register", description="Enregistrer un utilisateur avec un secret")
+@bot.hybrid_command(name="register", description="Enregistrer un utilisateur avec un secret")
 @app_commands.describe(secret_id="ID du secret")
 async def register_cmd(ctx: commands.Context, secret_id: str):
-    secret, error = validate_secret(secret_id)
+    secret, error = await validate_secret(secret_id) # ✅ AJOUT DE AWAIT
     
     if error:
         await ctx.send(f"Erreur : {error}", ephemeral=True)
@@ -224,7 +225,7 @@ async def register_cmd(ctx: commands.Context, secret_id: str):
     max_bots = secret["max_bots"]
 
     await register_user(user_id, max_bots)
-    consume_secret(secret_id)
+    await consume_secret(secret_id)
 
     user_dir = os.path.join(USERS_DIR, str(user_id))
     os.makedirs(user_dir, exist_ok=True)
@@ -242,26 +243,25 @@ async def register_cmd(ctx: commands.Context, secret_id: str):
 
     await ctx.send(f"Vous êtes enregistré avec succès ! Max bots : {max_bots}. Utilisez `/add_bot` pour ajouter vos bots.", ephemeral=True)
 
-@commands.hybrid_command(name="renew", description="Renouveler votre abonnement avec un nouveau secret")
+@bot.hybrid_command(name="renew", description="Renouveler votre abonnement avec un nouveau secret")
 @app_commands.describe(secret_id="ID du nouveau secret")
 async def renew_cmd(ctx: commands.Context, secret_id: str):
     """Renew an expired user account for another 30 days."""
     user_id = ctx.author.id
     
-    secret, error = validate_secret(secret_id)
+    secret, error = await validate_secret(secret_id) # ✅ AJOUT DE AWAIT
     
     if error:
         await ctx.send(f"Erreur : {error}", ephemeral=True)
         return
     
-    # Verify secret is for this user
     if secret["user_id"] != user_id:
         await ctx.send("Ce secret n'est pas valide pour votre ID utilisateur.", ephemeral=True)
         return
     
     try:
         await renew_user_account(user_id, secret["max_bots"])
-        consume_secret(secret_id)
+        await consume_secret(secret_id)
         
         # Invalidate cache
         _user_cache.pop(user_id, None)
@@ -270,12 +270,14 @@ async def renew_cmd(ctx: commands.Context, secret_id: str):
     except Exception as e:
         await ctx.send(f"Erreur lors du renouvellement : {e}", ephemeral=True)
 
-@commands.hybrid_command(name="add_bot", description="Ajouter un bot")
+@bot.hybrid_command(name="add_bot", description="Ajouter un bot")
 @app_commands.describe(nom="Nom du bot", token="Token du bot", script="Script a utiliser")
 @app_commands.choices(script=[
-    app_commands.Choice(name="utility.py", value="utility.py")
+    app_commands.Choice(name="utility.py", value="utility.py"),
+    app_commands.Choice(name="basic_test_script.py", value="basic_test_script.py") # ✅ NOUVEAU SCRIPT DE TEST
 ])
 async def add_bot_cmd(ctx: commands.Context, nom: str, token: str, script: str):
+    """Fonctionne en slash ET prefix automatiquement."""
     if not is_valid_bot_name(nom):
         await ctx.send(
             "Nom de bot invalide. Utilisez uniquement lettres, chiffres et tirets (max 32 caractères).",
@@ -306,7 +308,7 @@ async def add_bot_cmd(ctx: commands.Context, nom: str, token: str, script: str):
     _user_cache.pop(user_id, None)
     await ctx.send(f"Bot `{nom}` ajouté. Utilisez `/start_bot {nom}` pour le démarrer.", ephemeral=True)
 
-@commands.hybrid_command(name="start_bot", description="Démarrer un de vos bots")
+@bot.hybrid_command(name="start_bot", description="Démarrer un de vos bots")
 @app_commands.describe(nom="Nom du bot")
 async def start_bot_cmd(ctx: commands.Context, nom: str):
     user_id = ctx.author.id
@@ -333,13 +335,19 @@ async def start_bot_cmd(ctx: commands.Context, nom: str):
         return
 
     try:
-        start_bot_process(user_id, nom, bot_data[3], bot_data[4])
-        await update_bot_status(user_id, nom, "running")
-        await ctx.send(f"Bot `{nom}` démarré.", ephemeral=True)
+        # Vérifier le succès du lancement du processus
+        if await start_bot_process(user_id, nom, bot_data[3], bot_data[4]):
+            await update_bot_status(user_id, nom, "running")
+            await ctx.send(f"Bot `{nom}` démarré. Vérifiez ses logs pour confirmer la connexion.", ephemeral=True)
+        else:
+            await ctx.send(
+                f"Impossible de démarrer le bot `{nom}`. Vérifiez les logs pour plus de détails: `logs/{user_id}/{nom}.log`",
+                ephemeral=True
+            )
     except Exception as e:
-        await ctx.send(f"Erreur : `{e}`. Consultez `logs/{user_id}/{nom}.log`.", ephemeral=True)
+        await ctx.send(f"Erreur inattendue : `{e}`. Consultez `logs/{user_id}/{nom}.log`.", ephemeral=True)
 
-@commands.hybrid_command(name="stop_bot", description="Arrêter un de vos bots")
+@bot.hybrid_command(name="stop_bot", description="Arrêter un de vos bots")
 @app_commands.describe(nom="Nom du bot")
 async def stop_bot_cmd(ctx: commands.Context, nom: str):
     user_id = ctx.author.id
@@ -360,7 +368,7 @@ async def stop_bot_cmd(ctx: commands.Context, nom: str):
     else:
         await ctx.send(f"Impossible d'arrêter le bot `{nom}`.", ephemeral=True)
 
-@commands.hybrid_command(name="restart_bot", description="Redémarrer un de vos bots")
+@bot.hybrid_command(name="restart_bot", description="Redémarrer un de vos bots")
 @app_commands.describe(nom="Nom du bot")
 async def restart_bot_cmd(ctx: commands.Context, nom: str):
     user_id = ctx.author.id
@@ -383,16 +391,24 @@ async def restart_bot_cmd(ctx: commands.Context, nom: str):
 
     await ctx.defer(ephemeral=True)
 
+    # Arrêter d'abord
     stop_bot_process(user_id, nom)
-    await asyncio.sleep(1)
-    try:
-        start_bot_process(user_id, nom, bot_data[3], bot_data[4])
-        await update_bot_status(user_id, nom, "running")
-        await ctx.send(f"Bot `{nom}` redémarré.", ephemeral=True)
-    except Exception as e:
-        await ctx.send(f"Erreur : `{e}`. Consultez `logs/{user_id}/{nom}.log`.", ephemeral=True)
+    await asyncio.sleep(1) # Laisser un court instant pour la terminaison
 
-@commands.hybrid_command(name="update_token", description="Mettre à jour le token d'un de vos bots")
+    try:
+        # Tenter de redémarrer et vérifier le succès
+        if await start_bot_process(user_id, nom, bot_data[3], bot_data[4]):
+            await update_bot_status(user_id, nom, "running")
+            await ctx.send(f"Bot `{nom}` redémarré. Vérifiez ses logs pour confirmer la connexion.", ephemeral=True)
+        else:
+            await ctx.send(
+                f"Impossible de redémarrer le bot `{nom}`. Vérifiez les logs pour plus de détails: `logs/{user_id}/{nom}.log`",
+                ephemeral=True
+            )
+    except Exception as e:
+        await ctx.send(f"Erreur inattendue lors du redémarrage : `{e}`. Consultez `logs/{user_id}/{nom}.log`.", ephemeral=True)
+
+@bot.hybrid_command(name="update_token", description="Mettre à jour le token d'un de vos bots")
 @app_commands.describe(nom="Nom du bot", new_token="Nouveau token")
 async def update_token_cmd(ctx: commands.Context, nom: str, new_token: str):
     user_id = ctx.author.id
@@ -414,15 +430,21 @@ async def update_token_cmd(ctx: commands.Context, nom: str, new_token: str):
 
     if was_running:
         try:
-            start_bot_process(user_id, nom, encrypted_token, bot_data[4])
-            await update_bot_status(user_id, nom, "running")
-            await ctx.send(f"Token mis à jour et bot redémarré.", ephemeral=True)
+            # Tenter de redémarrer après la mise à jour du token
+            if await start_bot_process(user_id, nom, encrypted_token, bot_data[4]):
+                await update_bot_status(user_id, nom, "running")
+                await ctx.send(f"Token mis à jour et bot redémarré. Vérifiez ses logs pour confirmer la connexion.", ephemeral=True)
+            else:
+                await ctx.send(
+                    f"Token mis à jour, mais impossible de redémarrer le bot `{nom}`. Vérifiez les logs pour plus de détails.",
+                    ephemeral=True
+                )
         except Exception as e:
-            await ctx.send(f"Token mis à jour, mais erreur au redémarrage: {e}", ephemeral=True)
+            await ctx.send(f"Token mis à jour, mais erreur inattendue au redémarrage: {e}", ephemeral=True)
     else:
-        await ctx.send(f"Token mis à jour.", ephemeral=True)
+        await ctx.send(f"Token du bot `{nom}` mis à jour.", ephemeral=True)
 
-@commands.hybrid_command(name="delete_bot", description="Supprimer un de vos bots")
+@bot.hybrid_command(name="delete_bot", description="Supprimer un de vos bots")
 @app_commands.describe(nom="Nom du bot")
 async def delete_bot_cmd(ctx: commands.Context, nom: str):
     user_id = ctx.author.id
@@ -438,7 +460,7 @@ async def delete_bot_cmd(ctx: commands.Context, nom: str):
     await delete_bot(user_id, nom)
     await ctx.send(f"Bot `{nom}` supprimé.", ephemeral=True)
 
-@commands.hybrid_command(name="my_bots", description="Voir vos bots")
+@bot.hybrid_command(name="my_bots", description="Voir vos bots")
 async def my_bots_cmd(ctx: commands.Context):
     user_id = ctx.author.id
     bots_data = await get_user_bots(user_id)
@@ -463,7 +485,7 @@ async def my_bots_cmd(ctx: commands.Context):
     
     await ctx.send("\n".join(lines), ephemeral=True)
 
-@commands.hybrid_command(name="bot_info", description="Infos sur un de vos bots")
+@bot.hybrid_command(name="bot_info", description="Infos sur un de vos bots")
 @app_commands.describe(nom="Nom du bot")
 async def bot_info_cmd(ctx: commands.Context, nom: str):
     user_id = ctx.author.id
@@ -491,11 +513,9 @@ async def bot_info_cmd(ctx: commands.Context, nom: str):
 
 # --- COMMANDES DE DEBUG (Admin seulement) --- #
 
-@commands.hybrid_command(name="debug_bot_process", description="[ADMIN] Voir les processus actifs")
+@bot.hybrid_command(name="debug_bot_process", description="[ADMIN] Voir les processus actifs")
 async def debug_bot_process_cmd(ctx: commands.Context):
     if not is_admin_check(ctx):
-        if not ctx.interaction:
-            return
         await ctx.send("Vous n'êtes pas autorisé.", ephemeral=True)
         return
 
@@ -507,8 +527,6 @@ async def debug_bot_process_cmd(ctx: commands.Context):
 
 
 if __name__ == "__main__":
-    # La fonction init_db est maintenant appelée dans on_ready
-    # Le BOT_MANAGER_TOKEN est importé directement de config
     if not BOT_MANAGER_TOKEN or BOT_MANAGER_TOKEN == "VOTRE_TOKEN_BOT_MANAGER":
         print("ERREUR: Token du Bot Manager non configuré.")
         exit()

@@ -33,7 +33,6 @@ USERS_DIR = os.path.join(BASE_DIR, "utilisateurs")
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 SCRIPTS_ADMIN_DIR = os.path.join(BASE_DIR, "admin_scripts")
-SECRETS_FILE = os.path.join(BASE_DIR, "secrets.json")
 DB_PATH = os.path.join(DATA_DIR, "bot_manager.db")
 
 for directory in [USERS_DIR, LOGS_DIR, DATA_DIR, SCRIPTS_ADMIN_DIR]:
