@@ -4,7 +4,10 @@ from discord import app_commands
 import os
 import asyncio
 import shutil # <-- Assurez-vous que shutil est importé ici
-from ..config import BOT_MANAGER_TOKEN, ADMIN_IDS, USERS_DIR, SCRIPTS_ADMIN_DIR # Importe BOT_MANAGER_TOKEN et ADMIN_IDS de config
+# Support both running as a package (relative import) and as a script (absolute import)
+
+from .config import BOT_MANAGER_TOKEN, ADMIN_IDS, USERS_DIR, SCRIPTS_ADMIN_DIR 
+
 from .database import (
     init_db, # Importe init_db pour l'initialisation de la base de données du manager
     create_secret,
