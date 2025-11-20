@@ -73,21 +73,20 @@ def stop_bot_process(user_id: int, bot_name: str) -> bool:
     if key not in active_processes:
         return False
     
-    proc, log_handle, _ = active_processes[key]
+    proc, log_handle, _ = active_processes.get(key, (None, None, None))
+    if proc is None:
+        return False
     
     if proc.returncode is not None:
-        try:
-            log_handle.close()
-        except:
-            pass
+        # Le processus est déjà terminé, on le retire de la liste
+        # La fermeture du handle est gérée par monitor_processes lors du cycle précédent
         del active_processes[key]
         return False
     
     try:
         proc.terminate()
-        log_handle.close()
-        del active_processes[key]
-        print(f"Bot '{bot_name}' pour utilisateur {user_id} arrete.")
+        print(f"Bot '{bot_name}' pour utilisateur {user_id} arrete. Le nettoyage sera effectue par le moniteur.")
+        # Le nettoyage (fermeture du log, suppression de la clé) est délégué à monitor_processes.
         return True
     except Exception as e:
         print(f"Erreur lors de l'arret du bot '{bot_name}': {e}")
@@ -121,8 +120,10 @@ async def monitor_processes(bot):
         for key, (proc, log_handle, is_connected) in list(active_processes.items()):
             # 1. Nettoyer les processus terminés
             if proc.returncode is not None:
+                # Le processus est terminé, on ferme le handle de log et on le marque pour suppression
                 try:
                     log_handle.close()
+                    print(f"Log file closed for terminated bot {key}.")
                 except Exception as e:
                     print(f"Erreur fermeture log pour {key}: {e}")
                 finished_keys.append(key)

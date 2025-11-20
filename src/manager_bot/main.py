@@ -42,9 +42,13 @@ bot = commands.Bot(command_prefix="&", intents=intents)
 _start_cooldowns = defaultdict(lambda: 0)  # user_id -> last start/restart timestamp
 _START_COOLDOWN_SECONDS = 30
 
-# Simple cache for user data (TTL 60s)
-_user_cache = {}  # user_id -> (data, timestamp)
-_CACHE_TTL = 60
+    # Simple cache for user data (TTL 60s)
+    _user_cache = {}  # user_id -> (data, timestamp)
+    _CACHE_TTL = 60
+    
+    # Simple cache for bot data (TTL 60s)
+    _bot_cache = {} # (user_id, bot_name) -> (data, timestamp)
+    _BOT_CACHE_TTL = 60
 
 # Bot name validation regex (alphanumeric + hyphens, 1-32 chars)
 _bot_name_re = re.compile(r"^[A-Za-z0-9\-]{1,32}$")
@@ -64,6 +68,19 @@ async def get_user_cached(user_id: int):
     _user_cache[user_id] = (data, now)
     return data
 
+async def get_bot_cached(user_id: int, bot_name: str):
+    """Retrieve bot data with simple TTL cache (60s)."""
+    key = (user_id, bot_name)
+    now = time.time()
+    if key in _bot_cache:
+        data, timestamp = _bot_cache[key]
+        if now - timestamp < _BOT_CACHE_TTL:
+            return data
+    # Cache miss or expired: fetch fresh
+    data = await get_bot(user_id, bot_name)
+    _bot_cache[key] = (data, now)
+    return data
+
 def cleanup_expired_cooldowns():
     """Remove expired cooldowns from memory (call periodically)."""
     now = time.time()
@@ -73,11 +90,18 @@ def cleanup_expired_cooldowns():
 
 async def cleanup_expired_cache():
     """Remove expired cache entries (TTL 60s)."""
-    global _user_cache
+    global _user_cache, _bot_cache
     now = time.time()
-    expired = [uid for uid, (_, ts) in _user_cache.items() if now - ts > _CACHE_TTL]
-    for uid in expired:
+    
+    # Nettoyage du cache utilisateur
+    expired_users = [uid for uid, (_, ts) in _user_cache.items() if now - ts > _CACHE_TTL]
+    for uid in expired_users:
         del _user_cache[uid]
+        
+    # Nettoyage du cache bot
+    expired_bots = [key for key, (_, ts) in _bot_cache.items() if now - ts > _BOT_CACHE_TTL]
+    for key in expired_bots:
+        del _bot_cache[key]
 
 async def cleanup_expired_secrets():
     """Remove expired secrets from database."""
@@ -100,7 +124,7 @@ def is_registered_check(interaction: discord.Interaction) -> bool:
 
 async def check_bot_ownership(user_id: int, bot_name: str) -> bool:
     """Verify that a user owns a specific bot."""
-    bot_data = await get_bot(user_id, bot_name)
+    bot_data = await get_bot_cached(user_id, bot_name) # Utiliser le cache
     return bot_data is not None
 
 @bot.event
@@ -133,6 +157,35 @@ async def on_ready():
             await cleanup_expired_cache()  # Cache expiré (60s)
     
     bot.loop.create_task(cleanup_tasks())
+
+@bot.hybrid_command(name="status", description="Affiche le statut du Bot Manager et des bots de l'utilisateur.")
+async def status_cmd(ctx: commands.Context):
+    """Affiche le statut du Bot Manager et des bots de l'utilisateur."""
+    user_id = ctx.author.id
+    
+    user_data = await get_user_cached(user_id)
+    if not user_data:
+        await ctx.send("Vous n'êtes pas enregistré. Utilisez `/register`.", ephemeral=True)
+        return
+        
+    # Vérifier l'état du Bot Manager
+    latency = round(bot.latency * 1000)
+    status_msg = f"**Statut du Bot Manager**\n"
+    status_msg += f"Latence: {latency}ms\n"
+    status_msg += f"Utilisateur enregistré: Oui (Max Bots: {user_data['max_bots']})\n"
+    
+    # Vérifier l'état des bots de l'utilisateur
+    user_bots = await get_user_bots(user_id)
+    if not user_bots:
+        status_msg += "\n**Vos Bots**\nAucun bot enregistré. Utilisez `/add_bot`."
+    else:
+        status_msg += "\n**Vos Bots**\n"
+        for bot_data in user_bots:
+            bot_name = bot_data['bot_name']
+            process_status = get_bot_status(user_id, bot_name)
+            status_msg += f"- **{bot_name}**: {process_status}\n"
+            
+    await ctx.send(status_msg, ephemeral=True)
 
 @commands.hybrid_command(name="ping", description="Verifie la latence du Bot Manager.")
 async def ping_cmd(ctx: commands.Context):
@@ -313,6 +366,11 @@ async def add_bot_cmd(ctx: commands.Context, nom: str, token: str, script: str):
 async def start_bot_cmd(ctx: commands.Context, nom: str):
     user_id = ctx.author.id
 
+    user_data = await get_user_cached(user_id)
+    if not user_data:
+        await ctx.send("Vous n'êtes pas enregistré. Utilisez `/register`.", ephemeral=True)
+        return
+
     if not is_valid_bot_name(nom):
         await ctx.send("Nom de bot invalide.", ephemeral=True)
         return
@@ -320,7 +378,7 @@ async def start_bot_cmd(ctx: commands.Context, nom: str):
     now = time.time()
     last = _start_cooldowns[user_id]
     if now - last < _START_COOLDOWN_SECONDS:
-        await ctx.send(f"Vous devez attendre {int(_START_COOLDOWN_SECONDS - (now - last))}s.", ephemeral=True)
+        await ctx.send(f"Vous devez attendre {int(_START_COOLDOWN_SECONDS - (now - last))}s avant de démarrer/redémarrer un bot.", ephemeral=True)
         return
     _start_cooldowns[user_id] = now
 
@@ -356,6 +414,11 @@ async def start_bot_cmd(ctx: commands.Context, nom: str):
 async def stop_bot_cmd(ctx: commands.Context, nom: str):
     user_id = ctx.author.id
 
+    user_data = await get_user_cached(user_id)
+    if not user_data:
+        await ctx.send("Vous n'êtes pas enregistré. Utilisez `/register`.", ephemeral=True)
+        return
+
     bot_data = await get_bot(user_id, nom)
     if not bot_data:
         await ctx.send("Bot non trouvé ou non autorisé.", ephemeral=True)
@@ -377,6 +440,11 @@ async def stop_bot_cmd(ctx: commands.Context, nom: str):
 async def restart_bot_cmd(ctx: commands.Context, nom: str):
     user_id = ctx.author.id
 
+    user_data = await get_user_cached(user_id)
+    if not user_data:
+        await ctx.send("Vous n'êtes pas enregistré. Utilisez `/register`.", ephemeral=True)
+        return
+
     if not is_valid_bot_name(nom):
         await ctx.send("Nom de bot invalide.", ephemeral=True)
         return
@@ -384,7 +452,7 @@ async def restart_bot_cmd(ctx: commands.Context, nom: str):
     now = time.time()
     last = _start_cooldowns[user_id]
     if now - last < _START_COOLDOWN_SECONDS:
-        await ctx.send(f"Vous devez attendre {int(_START_COOLDOWN_SECONDS - (now - last))}s.", ephemeral=True)
+        await ctx.send(f"Vous devez attendre {int(_START_COOLDOWN_SECONDS - (now - last))}s avant de démarrer/redémarrer un bot.", ephemeral=True)
         return
     _start_cooldowns[user_id] = now
 
@@ -413,6 +481,11 @@ async def restart_bot_cmd(ctx: commands.Context, nom: str):
 @app_commands.describe(nom="Nom du bot", new_token="Nouveau token")
 async def update_token_cmd(ctx: commands.Context, nom: str, new_token: str):
     user_id = ctx.author.id
+
+    user_data = await get_user_cached(user_id)
+    if not user_data:
+        await ctx.send("Vous n'êtes pas enregistré. Utilisez `/register`.", ephemeral=True)
+        return
 
     bot_data = await get_bot(user_id, nom)
     if not bot_data:
@@ -448,6 +521,11 @@ async def update_token_cmd(ctx: commands.Context, nom: str, new_token: str):
 async def delete_bot_cmd(ctx: commands.Context, nom: str):
     user_id = ctx.author.id
 
+    user_data = await get_user_cached(user_id)
+    if not user_data:
+        await ctx.send("Vous n'êtes pas enregistré. Utilisez `/register`.", ephemeral=True)
+        return
+
     bot_data = await get_bot(user_id, nom)
     if not bot_data:
         await ctx.send("Bot non trouvé ou non autorisé.", ephemeral=True)
@@ -459,24 +537,28 @@ async def delete_bot_cmd(ctx: commands.Context, nom: str):
     await delete_bot(user_id, nom)
     await ctx.send(f"Bot `{nom}` supprimé.", ephemeral=True)
 
-@bot.hybrid_command(name="my_bots", description="Voir vos bots")
+@bot.hybrid_command(name="my_bots", description="Lister vos bots")
 async def my_bots_cmd(ctx: commands.Context):
     user_id = ctx.author.id
-    bots_data = await get_user_bots(user_id)
 
-    if not bots_data:
-        await ctx.send("Vous n'avez pas encore de bots.", ephemeral=True)
+    user_data = await get_user_cached(user_id)
+    if not user_data:
+        await ctx.send("Vous n'êtes pas enregistré. Utilisez `/register`.", ephemeral=True)
+        return
+
+    user_bots = await get_user_bots(user_id)
+    if not user_bots:
+        await ctx.send("Vous n'avez aucun bot enregistré. Utilisez `/add_bot`.", ephemeral=True)
         return
 
     lines = ["Vos bots:"]
-    for bot_data in bots_data:
+    for bot_data in user_bots:
         bot_name = bot_data[2]
-        status = get_bot_status(user_id, bot_name) # ✅ Utilise le nouveau statut
-        # ✅ Mise à jour de l'affichage des statuts
-        if status == "running":
-            status_text = "EN COURS"
-        elif status == "stopped":
-            status_text = "ARRÊTE"
+        status = get_bot_status(user_id, bot_name)
+        lines.append(f"- **{bot_name}** (Script: {bot_data[4]}, Statut: {status})")
+
+    await ctx.send("\n".join(lines), ephemeral=True)
+
         elif status == "starting":
             status_text = "DEMARRAGE..."
         elif status == "crashed":

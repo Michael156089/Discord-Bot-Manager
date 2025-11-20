@@ -29,6 +29,8 @@ class BasicTestCog(commands.Cog):
     async def on_ready(self):
         print(f"Bot de test '{self.bot.user}' est connecte a Discord. Prefix: !")
         print(f"Nombre de serveurs: {len(self.bot.guilds)}")
+        # Signal pour le Bot Manager
+        print("[BOT_MANAGER_SIGNAL] CONNEXION_REUSSIE")
 
 async def main():
     async with bot:
