@@ -45,7 +45,7 @@ async def init_db():
             FOREIGN KEY(user_id) REFERENCES users(id)
         )
     """)
-    await db.execute('''
+    await db.execute("""
         CREATE TABLE IF NOT EXISTS secrets (
             id TEXT PRIMARY KEY,
             user_id INTEGER NOT NULL,
@@ -53,7 +53,17 @@ async def init_db():
             created_at REAL NOT NULL,
             used INTEGER DEFAULT 0
         )
-    ''')
+    """)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS user_scripts (
+            user_id INTEGER,
+            script_name TEXT,
+            granted_at REAL NOT NULL,
+            granted_by INTEGER,
+            PRIMARY KEY (user_id, script_name),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """)
     await db.commit()
 
 async def create_secret(user_id: int, max_bots: int) -> str:
@@ -180,8 +190,13 @@ async def revoke_user(user_id: int):
         "UPDATE users SET revoked = 1 WHERE id = ?",
         (user_id,)
     )
+    # New: Delete associated user scripts entries
+    await db.execute(
+        "DELETE FROM user_scripts WHERE user_id = ?",
+        (user_id,)
+    )
     await db.commit()
-    print(f"User {user_id} revoked (all bots stopped)")
+    print(f"User {user_id} revoked (all bots stopped and scripts access cleared)")
 
 async def add_bot_to_db(user_id: int, bot_name: str, bot_token: str, script: str):
     db = await get_db()
@@ -245,3 +260,48 @@ async def renew_user_account(user_id: int, max_bots: int):
     )
     await db.commit()
     print(f"User {user_id} account renewed until {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expires_at))}")
+
+async def grant_script_access(user_id: int, script_name: str, granted_by: int):
+    """Accorder l'accès à un script spécial pour un utilisateur."""
+    db = await get_db()
+    now = time.time()
+    
+    await db.execute(
+        "INSERT OR REPLACE INTO user_scripts (user_id, script_name, granted_at, granted_by) VALUES (?, ?, ?, ?)",
+        (user_id, script_name, now, granted_by)
+    )
+    await db.commit()
+    print(f"Script '{script_name}' granted to user {user_id} by admin {granted_by}")
+
+async def revoke_script_access(user_id: int, script_name: str):
+    """Révoquer l'accès à un script spécial."""
+    db = await get_db()
+    
+    await db.execute(
+        "DELETE FROM user_scripts WHERE user_id = ? AND script_name = ?",
+        (user_id, script_name)
+    )
+    await db.commit()
+    print(f"Script '{script_name}' revoked from user {user_id}")
+
+async def get_user_allowed_scripts(user_id: int):
+    """Obtenir la liste des scripts autorisés pour un utilisateur."""
+    db = await get_db()
+    
+    cursor = await db.execute(
+        "SELECT script_name FROM user_scripts WHERE user_id = ?",
+        (user_id,)
+    )
+    rows = await cursor.fetchall()
+    return [row[0] for row in rows]
+
+async def is_script_allowed(user_id: int, script_name: str) -> bool:
+    """Vérifier si un utilisateur a accès à un script."""
+    db = await get_db()
+    
+    cursor = await db.execute(
+        "SELECT 1 FROM user_scripts WHERE user_id = ? AND script_name = ?",
+        (user_id, script_name)
+    )
+    row = await cursor.fetchone()
+    return row is not None

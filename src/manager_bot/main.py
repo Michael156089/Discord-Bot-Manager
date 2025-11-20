@@ -28,7 +28,12 @@ from .database import (
     get_all_users,
     revoke_user,
     get_user,
-    renew_user_account
+    renew_user_account,
+    # New script management functions
+    grant_script_access,
+    revoke_script_access,
+    get_user_allowed_scripts,
+    is_script_allowed
 )
 from .encryption import encrypt_token, decrypt_token
 from .bot_process import start_bot_process, stop_bot_process, get_bot_status, monitor_processes
@@ -127,6 +132,45 @@ async def check_bot_ownership(user_id: int, bot_name: str) -> bool:
     """Verify that a user owns a specific bot."""
     bot_data = await get_bot_cached(user_id, bot_name) # Utiliser le cache
     return bot_data is not None
+
+async def get_available_scripts_for_user(user_id: int) -> list:
+    """Obtenir tous les scripts disponibles pour un utilisateur."""
+    # Scripts de base (toujours disponibles)
+    basic_scripts_dir = os.path.join(SCRIPTS_ADMIN_DIR, "basic")
+    basic_scripts = []
+    
+    if os.path.exists(basic_scripts_dir):
+        basic_scripts = [f for f in os.listdir(basic_scripts_dir) if f.endswith('.py')]
+    
+    # Scripts premium (si autorisés)
+    allowed_premium = await get_user_allowed_scripts(user_id)
+    
+    # Combiner les deux
+    all_scripts = []
+    
+    # Ajouter scripts de base avec préfixe
+    for script in basic_scripts:
+        all_scripts.append({
+            "name": script,
+            "display": f"[BASIC] {script}",
+            "type": "basic",
+            "path": os.path.join(basic_scripts_dir, script)
+        })
+    
+    # Ajouter scripts premium autorisés
+    premium_scripts_dir = os.path.join(SCRIPTS_ADMIN_DIR, "premium")
+    if os.path.exists(premium_scripts_dir):
+        for script in allowed_premium:
+            script_path = os.path.join(premium_scripts_dir, script)
+            if os.path.exists(script_path):
+                all_scripts.append({
+                    "name": script,
+                    "display": f"[PREMIUM] {script}",
+                    "type": "premium",
+                    "path": script_path
+                })
+    
+    return all_scripts
 
 @bot.event
 async def on_ready():
@@ -256,6 +300,71 @@ async def revoke_user_cmd(ctx: commands.Context, user_id: int):
     await ctx.send(f"Utilisateur {user_id} révoqué. Tous ses bots ont été arrêtés et supprimés.", ephemeral=True)
 
 
+@bot.hybrid_command(name="grant_script", description="[ADMIN] Accorder l'accès à un script premium")
+@app_commands.describe(
+    target_user="L'utilisateur",
+    script_name="Nom du script premium"
+)
+async def grant_script_cmd(ctx: commands.Context, target_user: discord.User, script_name: str):
+    if not is_admin_check(ctx):
+        await ctx.send("Vous n'êtes pas autorisé.", ephemeral=True)
+        return
+    
+    # Vérifier que le script existe dans premium/
+    premium_script_path = os.path.join(SCRIPTS_ADMIN_DIR, "premium", script_name)
+    if not os.path.exists(premium_script_path):
+        await ctx.send(f"❌ Le script '{script_name}' n'existe pas dans les scripts premium.", ephemeral=True)
+        return
+    
+    await grant_script_access(target_user.id, script_name, ctx.author.id)
+    
+    # Copier le script chez l'utilisateur si déjà enregistré
+    user_data = await get_user(target_user.id)
+    if user_data:
+        user_scripts_dir = os.path.join(USERS_DIR, str(target_user.id), "scripts")
+        os.makedirs(user_scripts_dir, exist_ok=True)
+        
+        dest_path = os.path.join(user_scripts_dir, script_name)
+        shutil.copy(premium_script_path, dest_path)
+    
+    await ctx.send(f"✅ Script premium '{script_name}' accordé à {target_user.mention}.", ephemeral=True)
+
+@bot.hybrid_command(name="revoke_script", description="[ADMIN] Révoquer l'accès à un script premium")
+@app_commands.describe(
+    target_user="L'utilisateur",
+    script_name="Nom du script premium"
+)
+async def revoke_script_cmd(ctx: commands.Context, target_user: discord.User, script_name: str):
+    if not is_admin_check(ctx):
+        await ctx.send("Vous n'êtes pas autorisé.", ephemeral=True)
+        return
+    
+    await revoke_script_access(target_user.id, script_name)
+    
+    # Optional: Delete the script from the user's directory if it's a premium script
+    user_scripts_dir = os.path.join(USERS_DIR, str(target_user.id), "scripts")
+    script_path_in_user_dir = os.path.join(user_scripts_dir, script_name)
+    if os.path.exists(script_path_in_user_dir):
+        os.remove(script_path_in_user_dir)
+        
+    await ctx.send(f"✅ Script premium '{script_name}' révoqué pour {target_user.mention}.", ephemeral=True)
+
+@bot.hybrid_command(name="list_user_scripts", description="[ADMIN] Voir les scripts d'un utilisateur")
+@app_commands.describe(target_user="L'utilisateur")
+async def list_user_scripts_cmd(ctx: commands.Context, target_user: discord.User):
+    if not is_admin_check(ctx):
+        await ctx.send("Vous n'êtes pas autorisé.", ephemeral=True)
+        return
+    
+    allowed = await get_user_allowed_scripts(target_user.id)
+    
+    if not allowed:
+        await ctx.send(f"{target_user.mention} n'a accès qu'aux scripts de base.", ephemeral=True)
+    else:
+        msg = f"**Scripts premium de {target_user.mention}:**\n"
+        msg += "\n".join([f"- {script}" for script in allowed])
+        await ctx.send(msg, ephemeral=True)
+
 # --- COMMANDES UTILISATEUR (HYBRIDES) --- #
 
 @bot.hybrid_command(name="register", description="Enregistrer un utilisateur avec un secret")
@@ -286,14 +395,17 @@ async def register_cmd(ctx: commands.Context, secret_id: str):
     scripts_dest_dir = os.path.join(user_dir, "scripts")
     os.makedirs(scripts_dest_dir, exist_ok=True)
 
-    for item_name in os.listdir(SCRIPTS_ADMIN_DIR):
-        src_path = os.path.join(SCRIPTS_ADMIN_DIR, item_name)
-        dest_path = os.path.join(scripts_dest_dir, item_name)
+    # Copy basic scripts for new user
+    basic_scripts_dir = os.path.join(SCRIPTS_ADMIN_DIR, "basic")
+    if os.path.exists(basic_scripts_dir):
+        for item_name in os.listdir(basic_scripts_dir):
+            src_path = os.path.join(basic_scripts_dir, item_name)
+            dest_path = os.path.join(scripts_dest_dir, item_name)
 
-        if os.path.isfile(src_path) and src_path.endswith('.py'):
-            shutil.copy(src_path, scripts_dest_dir)
-        elif os.path.isdir(src_path):
-            shutil.copytree(src_path, dest_path, dirs_exist_ok=True)
+            if os.path.isfile(src_path) and src_path.endswith('.py'):
+                shutil.copy(src_path, scripts_dest_dir)
+            elif os.path.isdir(src_path): # Should not happen with current basic scripts, but for robustness
+                shutil.copytree(src_path, dest_path, dirs_exist_ok=True)
 
     await ctx.send(f"Vous êtes enregistré avec succès ! Max bots : {max_bots}. Utilisez `/add_bot` pour ajouter vos bots.", ephemeral=True)
 
@@ -326,10 +438,10 @@ async def renew_cmd(ctx: commands.Context, secret_id: str):
 
 @bot.hybrid_command(name="add_bot", description="Ajouter un bot")
 @app_commands.describe(nom="Nom du bot", token="Token du bot", script="Script a utiliser")
-@app_commands.choices(script=[
-    app_commands.Choice(name="utility.py", value="utility.py"),
-    app_commands.Choice(name="basic_test_script.py", value="basic_test_script.py")
-])
+# @app_commands.choices(script=[ # REMOVED: Replaced by dynamic autocomplete
+#     app_commands.Choice(name="utility.py", value="utility.py"),
+#     app_commands.Choice(name="basic_test_script.py", value="basic_test_script.py")
+# ])
 async def add_bot_cmd(ctx: commands.Context, nom: str, token: str, script: str):
     """Ajouter un bot avec copie du script si nécessaire."""
     if not is_valid_bot_name(nom):
@@ -346,7 +458,7 @@ async def add_bot_cmd(ctx: commands.Context, nom: str, token: str, script: str):
         await ctx.send("Utilisateur non enregistré. Utilisez d'abord `/register`.", ephemeral=True)
         return
 
-    max_bots = user_data[1]
+    max_bots = user_data[1] # user_data is a Row object, user_data[1] is max_bots
     bots = await get_user_bots(user_id)
     if len(bots) >= max_bots:
         await ctx.send(f"Vous avez déjà {len(bots)} bots. Limite atteinte ({max_bots} bots).", ephemeral=True)
@@ -357,25 +469,27 @@ async def add_bot_cmd(ctx: commands.Context, nom: str, token: str, script: str):
         await ctx.send(f"Un bot nommé `{nom}` existe déjà.", ephemeral=True)
         return
     
-    # ✅ CORRECTION CRITIQUE: Copier le script si nécessaire
-    user_scripts_dir = os.path.join(USERS_DIR, str(user_id), "scripts")
-    user_script_path = os.path.join(user_scripts_dir, script)
-    admin_script_path = os.path.join(SCRIPTS_ADMIN_DIR, script)
+    # ✅ Vérifier l'accès au script
+    available_scripts = await get_available_scripts_for_user(user_id)
+    script_info = next((s for s in available_scripts if s["name"] == script), None)
     
-    # Créer le répertoire scripts s'il n'existe pas
+    if not script_info:
+        await ctx.send(f"❌ Vous n'avez pas accès au script '{script}'.", ephemeral=True)
+        return
+    
+    # Copier le script depuis le bon emplacement
+    user_scripts_dir = os.path.join(USERS_DIR, str(user_id), "scripts")
     os.makedirs(user_scripts_dir, exist_ok=True)
     
-    # Si le script n'existe pas chez l'utilisateur, le copier depuis admin_scripts
+    user_script_path = os.path.join(user_scripts_dir, script)
+    
+    # Only copy if the script doesn't exist in the user's directory or is outdated (optional, simpler to just ensure it's there)
     if not os.path.exists(user_script_path):
-        if os.path.exists(admin_script_path):
-            try:
-                shutil.copy(admin_script_path, user_script_path)
-                print(f"✅ Script '{script}' copié pour user {user_id}")
-            except Exception as e:
-                await ctx.send(f"❌ Erreur copie du script: {e}", ephemeral=True)
-                return
-        else:
-            await ctx.send(f"❌ Le script '{script}' n'existe pas dans les scripts admin.", ephemeral=True)
+        try:
+            shutil.copy(script_info["path"], user_script_path)
+            print(f"✅ Script '{script}' ({script_info['type']}) copied for user {user_id}")
+        except Exception as e:
+            await ctx.send(f"❌ Erreur copie du script: {e}", ephemeral=True)
             return
     
     encrypted_token = encrypt_token(token)
@@ -385,7 +499,24 @@ async def add_bot_cmd(ctx: commands.Context, nom: str, token: str, script: str):
     _user_cache.pop(user_id, None)
     _bot_cache.pop((user_id, nom), None)
     
-    await ctx.send(f"Bot `{nom}` ajouté avec le script `{script}`. Utilisez `/start_bot {nom}` pour le démarrer.", ephemeral=True)
+    script_type_display = "PREMIUM" if script_info["type"] == "premium" else "BASIC"
+    await ctx.send(f"✅ Bot `{nom}` ajouté avec le script [{script_type_display}] `{script}`. Utilisez `/start_bot {nom}` pour le démarrer.", ephemeral=True)
+
+@add_bot_cmd.autocomplete('script')
+async def script_autocomplete(interaction: discord.Interaction, current: str):
+    """Autocomplete dynamique basé sur les scripts disponibles pour l'utilisateur."""
+    user_id = interaction.user.id
+    
+    available_scripts = await get_available_scripts_for_user(user_id)
+    
+    # Filtrer selon ce que l'utilisateur tape
+    filtered = [s for s in available_scripts if current.lower() in s["name"].lower()]
+    
+    # Retourner max 25 choix (limite Discord)
+    return [
+        app_commands.Choice(name=s["display"], value=s["name"])
+        for s in filtered[:25]
+    ]
 
 @bot.hybrid_command(name="start_bot", description="Démarrer un de vos bots")
 @app_commands.describe(nom="Nom du bot")
@@ -617,6 +748,38 @@ async def bot_info_cmd(ctx: commands.Context, nom: str):
         ephemeral=True
     )
 
+
+@bot.hybrid_command(name="my_scripts", description="Voir les scripts disponibles pour vous")
+async def my_scripts_cmd(ctx: commands.Context):
+    user_id = ctx.author.id
+    
+    user_data = await get_user_cached(user_id)
+    if not user_data:
+        await ctx.send("Vous n'êtes pas enregistré. Utilisez `/register`.", ephemeral=True)
+        return
+    
+    available = await get_available_scripts_for_user(user_id)
+    
+    if not available:
+        await ctx.send("Aucun script disponible.", ephemeral=True)
+        return
+    
+    # Grouper par type
+    basic = [s for s in available if s["type"] == "basic"]
+    premium = [s for s in available if s["type"] == "premium"]
+    
+    msg = "**Vos scripts disponibles:**\n\n"
+    
+    if basic:
+        msg += "**📦 Scripts de Base:**\n"
+        msg += "\n".join([f"- `{s['name']}`" for s in basic])
+        msg += "\n\n"
+    
+    if premium:
+        msg += "**⭐ Scripts Premium:**\n"
+        msg += "\n".join([f"- `{s['name']}`" for s in premium])
+    
+    await ctx.send(msg, ephemeral=True)
 
 # --- COMMANDES DE DEBUG (Admin seulement) --- #
 
