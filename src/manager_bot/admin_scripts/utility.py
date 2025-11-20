@@ -1,5 +1,7 @@
 """
-Bot Discord Utilitaire - VERSION SIMPLIFIEE
+Bot Discord Utilitaire - Script pour les utilisateurs.
+Charge sa configuration (token) via la variable d'environnement DISCORD_BOT_TOKEN
+fournie par le Bot Manager. Le prefixe est fixe.
 """
 
 import discord
@@ -9,11 +11,12 @@ import os
 import sys
 
 # --- CONFIG SIMPLE --- #
+# Le token vient TOUJOURS de la variable d'environnement fournie par le Bot Manager
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-PREFIX = "!"
+PREFIX = "!" # Le prefixe est fixe pour ce bot utilisateur
 
 if not TOKEN:
-    print("ERREUR: DISCORD_BOT_TOKEN manquant")
+    print("ERREUR: Le token du bot est manquant. Assurez-vous que DISCORD_BOT_TOKEN est defini.")
     sys.exit(1)
 
 # --- BOT SETUP --- #
@@ -21,7 +24,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
+bot = commands.Bot(command_prefix=PREFIX, intents=intents, description="Bot Utilitaire Discord", help_command=None)
 
 class Utility(commands.Cog):
     def __init__(self, bot):
@@ -196,6 +199,8 @@ class Utility(commands.Cog):
         print(f"✅ Bot {self.bot.user} connecte!")
         print(f"   Prefixe: {PREFIX}")
         print(f"   Serveurs: {len(self.bot.guilds)}")
+        # ✅ Signal de connexion réussi pour le Bot Manager
+        print("[BOT_MANAGER_SIGNAL] CONNEXION_REUSSIE")
 
 async def main():
     async with bot:

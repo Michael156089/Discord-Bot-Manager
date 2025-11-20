@@ -90,10 +90,10 @@ async def cleanup_expired_users():
     await delete_expired_users()
 
 # --- Fonctions utilitaires --- #
-def is_admin_check(ctx) -> bool:
+def is_admin_check(ctx: commands.Context) -> bool: # ✅ Toujours attendre commands.Context
     """Check if user is admin (works for both Context and Interaction)."""
-    user = ctx.author if hasattr(ctx, 'author') else ctx.user
-    return user.id in ADMIN_IDS
+    # ctx.author est toujours disponible dans un commands.Context, meme si c'est une Interaction
+    return ctx.author.id in ADMIN_IDS
 
 def is_registered_check(interaction: discord.Interaction) -> bool:
     return os.path.exists(os.path.join(USERS_DIR, str(interaction.user.id)))
@@ -333,12 +333,16 @@ async def start_bot_cmd(ctx: commands.Context, nom: str):
     if current_status == "running":
         await ctx.send(f"Le bot `{nom}` est déjà en cours d'exécution.", ephemeral=True)
         return
+    # ✅ Gérer le cas "starting"
+    if current_status == "starting":
+        await ctx.send(f"Le bot `{nom}` est déjà en cours de démarrage. Veuillez patienter.", ephemeral=True)
+        return
 
     try:
-        # Vérifier le succès du lancement du processus
         if await start_bot_process(user_id, nom, bot_data[3], bot_data[4]):
-            await update_bot_status(user_id, nom, "running")
-            await ctx.send(f"Bot `{nom}` démarré. Vérifiez ses logs pour confirmer la connexion.", ephemeral=True)
+            # Ne pas mettre à jour le statut DB ici, car la connexion n'est pas encore confirmée.
+            # Le statut "starting" est géré par get_bot_status.
+            await ctx.send(f"Bot `{nom}` démarré. En attente de sa connexion à Discord...", ephemeral=True)
         else:
             await ctx.send(
                 f"Impossible de démarrer le bot `{nom}`. Vérifiez les logs pour plus de détails: `logs/{user_id}/{nom}.log`",
@@ -391,15 +395,12 @@ async def restart_bot_cmd(ctx: commands.Context, nom: str):
 
     await ctx.defer(ephemeral=True)
 
-    # Arrêter d'abord
     stop_bot_process(user_id, nom)
-    await asyncio.sleep(1) # Laisser un court instant pour la terminaison
+    await asyncio.sleep(1)
 
     try:
-        # Tenter de redémarrer et vérifier le succès
         if await start_bot_process(user_id, nom, bot_data[3], bot_data[4]):
-            await update_bot_status(user_id, nom, "running")
-            await ctx.send(f"Bot `{nom}` redémarré. Vérifiez ses logs pour confirmer la connexion.", ephemeral=True)
+            await ctx.send(f"Bot `{nom}` redémarré. En attente de sa connexion à Discord...", ephemeral=True)
         else:
             await ctx.send(
                 f"Impossible de redémarrer le bot `{nom}`. Vérifiez les logs pour plus de détails: `logs/{user_id}/{nom}.log`",
@@ -420,7 +421,7 @@ async def update_token_cmd(ctx: commands.Context, nom: str, new_token: str):
 
     was_running = False
     current_status = get_bot_status(user_id, nom)
-    if current_status == "running":
+    if current_status in ["running", "starting"]: # ✅ Gérer aussi "starting"
         stop_bot_process(user_id, nom)
         was_running = True
         await asyncio.sleep(1)
@@ -430,13 +431,11 @@ async def update_token_cmd(ctx: commands.Context, nom: str, new_token: str):
 
     if was_running:
         try:
-            # Tenter de redémarrer après la mise à jour du token
             if await start_bot_process(user_id, nom, encrypted_token, bot_data[4]):
-                await update_bot_status(user_id, nom, "running")
-                await ctx.send(f"Token mis à jour et bot redémarré. Vérifiez ses logs pour confirmer la connexion.", ephemeral=True)
+                await ctx.send(f"Token mis à jour et bot redémarré. En attente de sa connexion à Discord...", ephemeral=True)
             else:
                 await ctx.send(
-                    f"Token mis à jour, mais impossible de redémarrer le bot `{nom}`. Vérifiez les logs pour plus de détails.",
+                    f"Token mis à jour, mais impossible de redémarrer le bot `{nom}`. Vérifiez les logs.",
                     ephemeral=True
                 )
         except Exception as e:
@@ -472,15 +471,18 @@ async def my_bots_cmd(ctx: commands.Context):
     lines = ["Vos bots:"]
     for bot_data in bots_data:
         bot_name = bot_data[2]
-        status = get_bot_status(user_id, bot_name)
+        status = get_bot_status(user_id, bot_name) # ✅ Utilise le nouveau statut
+        # ✅ Mise à jour de l'affichage des statuts
         if status == "running":
             status_text = "EN COURS"
         elif status == "stopped":
             status_text = "ARRÊTE"
-        elif status == "crashed_permanently":
-            status_text = "ARRETE (plantages repetes)"
+        elif status == "starting":
+            status_text = "DEMARRAGE..."
+        elif status == "crashed":
+            status_text = "CRASHÉ"
         else:
-            status_text = "ERREUR"
+            status_text = status.upper()
         lines.append(f"`{bot_name}` - Script: {bot_data[4]} - Statut: {status_text}")
     
     await ctx.send("\n".join(lines), ephemeral=True)
