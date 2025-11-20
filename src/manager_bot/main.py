@@ -7,6 +7,7 @@ import shutil
 import re
 import time
 from collections import defaultdict
+import shutil
 
 # Support both running as a package (relative import) and as a script (absolute import)
 
@@ -42,13 +43,13 @@ bot = commands.Bot(command_prefix="&", intents=intents)
 _start_cooldowns = defaultdict(lambda: 0)  # user_id -> last start/restart timestamp
 _START_COOLDOWN_SECONDS = 30
 
-    # Simple cache for user data (TTL 60s)
-    _user_cache = {}  # user_id -> (data, timestamp)
-    _CACHE_TTL = 60
-    
-    # Simple cache for bot data (TTL 60s)
-    _bot_cache = {} # (user_id, bot_name) -> (data, timestamp)
-    _BOT_CACHE_TTL = 60
+# Simple cache for user data (TTL 60s)
+_user_cache = {}  # user_id -> (data, timestamp)
+_CACHE_TTL = 60
+
+# Simple cache for bot data (TTL 60s)
+_bot_cache = {} # (user_id, bot_name) -> (data, timestamp)
+_BOT_CACHE_TTL = 60
 
 # Bot name validation regex (alphanumeric + hyphens, 1-32 chars)
 _bot_name_re = re.compile(r"^[A-Za-z0-9\-]{1,32}$")
@@ -327,10 +328,10 @@ async def renew_cmd(ctx: commands.Context, secret_id: str):
 @app_commands.describe(nom="Nom du bot", token="Token du bot", script="Script a utiliser")
 @app_commands.choices(script=[
     app_commands.Choice(name="utility.py", value="utility.py"),
-    app_commands.Choice(name="basic_test_script.py", value="basic_test_script.py") # ✅ NOUVEAU SCRIPT DE TEST
+    app_commands.Choice(name="basic_test_script.py", value="basic_test_script.py")
 ])
 async def add_bot_cmd(ctx: commands.Context, nom: str, token: str, script: str):
-    """Fonctionne en slash ET prefix automatiquement."""
+    """Ajouter un bot avec copie du script si nécessaire."""
     if not is_valid_bot_name(nom):
         await ctx.send(
             "Nom de bot invalide. Utilisez uniquement lettres, chiffres et tirets (max 32 caractères).",
@@ -356,10 +357,35 @@ async def add_bot_cmd(ctx: commands.Context, nom: str, token: str, script: str):
         await ctx.send(f"Un bot nommé `{nom}` existe déjà.", ephemeral=True)
         return
     
+    # ✅ CORRECTION CRITIQUE: Copier le script si nécessaire
+    user_scripts_dir = os.path.join(USERS_DIR, str(user_id), "scripts")
+    user_script_path = os.path.join(user_scripts_dir, script)
+    admin_script_path = os.path.join(SCRIPTS_ADMIN_DIR, script)
+    
+    # Créer le répertoire scripts s'il n'existe pas
+    os.makedirs(user_scripts_dir, exist_ok=True)
+    
+    # Si le script n'existe pas chez l'utilisateur, le copier depuis admin_scripts
+    if not os.path.exists(user_script_path):
+        if os.path.exists(admin_script_path):
+            try:
+                shutil.copy(admin_script_path, user_script_path)
+                print(f"✅ Script '{script}' copié pour user {user_id}")
+            except Exception as e:
+                await ctx.send(f"❌ Erreur copie du script: {e}", ephemeral=True)
+                return
+        else:
+            await ctx.send(f"❌ Le script '{script}' n'existe pas dans les scripts admin.", ephemeral=True)
+            return
+    
     encrypted_token = encrypt_token(token)
     await add_bot_to_db(user_id, nom, encrypted_token, script)
+    
+    # ✅ Invalider le cache
     _user_cache.pop(user_id, None)
-    await ctx.send(f"Bot `{nom}` ajouté. Utilisez `/start_bot {nom}` pour le démarrer.", ephemeral=True)
+    _bot_cache.pop((user_id, nom), None)
+    
+    await ctx.send(f"Bot `{nom}` ajouté avec le script `{script}`. Utilisez `/start_bot {nom}` pour le démarrer.", ephemeral=True)
 
 @bot.hybrid_command(name="start_bot", description="Démarrer un de vos bots")
 @app_commands.describe(nom="Nom du bot")
@@ -555,11 +581,8 @@ async def my_bots_cmd(ctx: commands.Context):
     for bot_data in user_bots:
         bot_name = bot_data[2]
         status = get_bot_status(user_id, bot_name)
-        lines.append(f"- **{bot_name}** (Script: {bot_data[4]}, Statut: {status})")
-
-    await ctx.send("\n".join(lines), ephemeral=True)
-
-        elif status == "starting":
+        
+        if status == "starting":
             status_text = "DEMARRAGE..."
         elif status == "crashed":
             status_text = "CRASHÉ"

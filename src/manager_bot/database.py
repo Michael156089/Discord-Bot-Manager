@@ -1,11 +1,8 @@
 import aiosqlite
-from datetime import datetime, timedelta
 from .config import DB_PATH
-import os
 import secrets
 import time
 
-# Single shared connection pool/context (avoid creating new connections per query)
 _db_connection = None
 
 async def get_db():
@@ -15,6 +12,15 @@ async def get_db():
         _db_connection = await aiosqlite.connect(DB_PATH)
         _db_connection.row_factory = aiosqlite.Row
     return _db_connection
+
+# ✅ AJOUT: Fonction manquante pour fermer la DB
+async def close_db():
+    """Close the database connection."""
+    global _db_connection
+    if _db_connection:
+        await _db_connection.close()
+        _db_connection = None
+        print("Database connection closed.")
 
 async def init_db():
     """Initialize the database."""
@@ -36,7 +42,7 @@ async def init_db():
             bot_token TEXT,
             script TEXT,
             status TEXT DEFAULT 'stopped',
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
+            FOREIGN KEY(user_id) REFERENCES users(id)
         )
     """)
     await db.execute('''
@@ -51,7 +57,7 @@ async def init_db():
     await db.commit()
 
 async def create_secret(user_id: int, max_bots: int) -> str:
-    """Create a secret in SQL database (not JSON)."""
+    """Create a secret in SQL database."""
     db = await get_db()
     secret_id = secrets.token_urlsafe(32)
     now = time.time()
@@ -78,11 +84,9 @@ async def validate_secret(secret_id: str):
     
     user_id, max_bots, created_at, used = row
     
-    # Check if already used
     if used:
         return None, "Ce secret a déjà été utilisé."
     
-    # Check if expired (24 hours)
     now = time.time()
     if now - created_at > (24 * 3600):
         return None, "Ce secret a expiré (24 heures)."
@@ -99,7 +103,7 @@ async def consume_secret(secret_id: str):
     await db.commit()
 
 async def delete_expired_secrets():
-    """Delete secrets that have expired (older than 24 hours)."""
+    """Delete secrets older than 24 hours."""
     db = await get_db()
     now = time.time()
     expiry_threshold = now - (24 * 3600)
@@ -115,7 +119,7 @@ async def register_user(user_id: int, max_bots: int):
     """Register a user with 30-day expiration."""
     db = await get_db()
     now = time.time()
-    expires_at = now + (30 * 24 * 3600)  # 30 days from now
+    expires_at = now + (30 * 24 * 3600)
     
     await db.execute(
         "INSERT OR REPLACE INTO users (id, max_bots, registered_at, expires_at, revoked) VALUES (?, ?, ?, ?, 0)",
@@ -136,23 +140,18 @@ async def get_user(user_id: int):
     if not row:
         return None
     
-    user_id, max_bots, registered_at, expires_at, revoked = row
-    
-    # Check if user account has expired (30 days)
     now = time.time()
-    if now > expires_at:
-        # Account expired - revoke it
+    if now > row[3]:  # expires_at
         await revoke_user(user_id)
         return None
     
     return row
 
 async def delete_expired_users():
-    """Automatically revoke and cleanup expired users (30 days after registration)."""
+    """Automatically revoke expired users."""
     db = await get_db()
     now = time.time()
     
-    # Find expired users - utiliser 'id' qui est la clé primaire
     cursor = await db.execute(
         "SELECT id FROM users WHERE expires_at < ? AND revoked = 0",
         (now,)
@@ -167,9 +166,8 @@ async def revoke_user(user_id: int):
     """Mark user as revoked and stop all their bots."""
     db = await get_db()
     
-    # Stop all bots first - utiliser 'user_id' qui existe
     cursor = await db.execute(
-        "SELECT bot_name FROM bots WHERE user_id = ? AND status != 'deleted'",
+        "SELECT bot_name FROM bots WHERE user_id = ?",
         (user_id,)
     )
     bots = await cursor.fetchall()
@@ -178,7 +176,6 @@ async def revoke_user(user_id: int):
         from .bot_process import stop_bot_process
         stop_bot_process(user_id, bot_name)
     
-    # Mark user as revoked - utiliser 'id' qui est la clé primaire
     await db.execute(
         "UPDATE users SET revoked = 1 WHERE id = ?",
         (user_id,)
@@ -240,9 +237,8 @@ async def renew_user_account(user_id: int, max_bots: int):
     """Renew an expired user account for another 30 days."""
     db = await get_db()
     now = time.time()
-    expires_at = now + (30 * 24 * 3600)  # 30 days from now
+    expires_at = now + (30 * 24 * 3600)
     
-    # Update user: set revoked=0 and new expiration date, keep max_bots
     await db.execute(
         "UPDATE users SET expires_at = ?, revoked = 0 WHERE id = ?",
         (expires_at, user_id)
