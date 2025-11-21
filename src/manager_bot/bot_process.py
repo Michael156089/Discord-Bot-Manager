@@ -104,11 +104,20 @@ def stop_bot_process(user_id: int, bot_name: str) -> bool:
     proc, _ = active_processes[key]
     
     if proc.returncode is not None:
+        # Process already terminated, just clean up our record
         del active_processes[key]
         return False
     
     try:
-        proc.terminate()
+        proc.terminate() # Request graceful termination
+        
+        # Give it a moment to terminate gracefully
+        try:
+            proc.wait(timeout=3) # Wait up to 3 seconds
+        except asyncio.TimeoutError:
+            print(f"⚠️ Bot '{bot_name}' (user {user_id}) did not terminate gracefully, sending SIGKILL.")
+            proc.kill() # Force kill if it didn't terminate
+        
         del active_processes[key]
         print(f"🛑 Bot '{bot_name}' (user {user_id}) arrêté.")
         return True

@@ -7,7 +7,7 @@ import shutil
 import re
 import time
 from collections import defaultdict
-import shutil
+from datetime import datetime # ADDED for date formatting
 
 # Support both running as a package (relative import) and as a script (absolute import)
 
@@ -42,7 +42,11 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-bot = commands.Bot(command_prefix="&", intents=intents)
+bot = commands.Bot(command_prefix="&", intents=intents , help_command= None )
+
+check_mark= "<:CheckMark:1441244706762788937>"
+fail_emoji = "<:redcross:1441245277263757394>"
+
 
 # Add simple cooldown storage with expiry (in-memory)
 _start_cooldowns = defaultdict(lambda: 0)  # user_id -> last start/restart timestamp
@@ -175,18 +179,17 @@ async def get_available_scripts_for_user(user_id: int) -> list:
 @bot.event
 async def on_ready():
     print(f"Bot Manager connecté: {bot.user}")
-    # Initialise la base de données du Manager
     await init_db() 
     print("Base de données du Manager initialisée.")
     
-    # ✅ Synchronisation des commandes slash se fait ici après la connexion du bot
+    
     try:
         synced = await bot.tree.sync()
-        print(f"✅ Synchronisé {len(synced)} commandes slash.")
+        print(f" Synchronisé {len(synced)} commandes slash.")
         for cmd in synced:
             print(f"  - /{cmd.name}")
     except Exception as e:
-        print(f"❌ Erreur lors de la synchronisation des commandes slash: {e}")
+        print(f" Erreur lors de la synchronisation des commandes slash: {e}")
 
     # Lance la tâche de surveillance des processus de bot
     bot.loop.create_task(monitor_processes(bot))
@@ -245,17 +248,17 @@ async def ping_cmd(ctx: commands.Context):
 @app_commands.describe(target_user="L'utilisateur pour qui créer un secret", max_bots="Nombre maximum de bots")
 async def create_secret_cmd(ctx: commands.Context, target_user: discord.User, max_bots: int):
     if not is_admin_check(ctx):
-        await ctx.send("Vous n'êtes pas autorisé à utiliser cette commande.", ephemeral=True)
+        await ctx.send(f"Vous n'êtes pas autorisé à utiliser cette commande. {fail_emoji}", ephemeral=True)
         return
     
     if max_bots < 1:
-        await ctx.send("Le nombre de bots doit être au minimum 1.", ephemeral=True)
+        await ctx.send(f"Le nombre de bots doit être au minimum 1. {fail_emoji}", ephemeral=True)
         return
     
     secret_id = await create_secret(target_user.id, max_bots)
     try:
         await target_user.send(f"Votre secret pour le Bot Manager : `{secret_id}`. Utilisez-le rapidement !")
-        await ctx.send(f"Secret créé et envoyé à {target_user.mention}.", ephemeral=True)
+        await ctx.send(f"Secret créé et envoyé à {target_user.mention} {check_mark}", ephemeral=True)
     except discord.Forbidden:
         await ctx.send(f"Impossible d'envoyer un DM à {target_user.mention}. Secret créé : `{secret_id}`", ephemeral=True)
 
@@ -263,28 +266,39 @@ async def create_secret_cmd(ctx: commands.Context, target_user: discord.User, ma
 @bot.hybrid_command(name="list_users", description="Lister tous les utilisateurs")
 async def list_users_cmd(ctx: commands.Context):
     if not is_admin_check(ctx):
-        await ctx.send("Vous n'êtes pas autorisé à utiliser cette commande.", ephemeral=True)
+        await ctx.send(f"Vous n'êtes pas autorisé à utiliser cette commande. {fail_emoji}", ephemeral=True)
         return
 
     users = await get_all_users()
     if not users:
-        await ctx.send("Aucun utilisateur trouvé.", ephemeral=True)
+        await ctx.send(f"Aucun utilisateur trouvé. {fail_emoji}", ephemeral=True)
         return
 
-    user_list = "\n".join([f"ID: {user[0]}, Max Bots: {user[1]}, Inscrit le: {user[2]}" for user in users])
-    await ctx.send(f"Utilisateurs:\n{user_list}", ephemeral=True)
+    user_list_lines = []
+    for user_data in users:
+        user_id, max_bots, registered_at_ts, expires_at_ts, revoked = user_data
+        
+        registered_date = datetime.fromtimestamp(registered_at_ts).strftime('%Y-%m-%d %H:%M:%S')
+        expires_date = datetime.fromtimestamp(expires_at_ts).strftime('%Y-%m-%d %H:%M:%S')
+        
+        status = "Révoqué" if revoked else "Actif"
+        
+        user_list_lines.append(f"ID: {user_id}, Max Bots: {max_bots}, Statut: {status}, Inscrit le: {registered_date}, Expire le: {expires_date}")
+        
+    # Corrected f-string to avoid backslash within expression part
+    await ctx.send(f"Utilisateurs:\n" + '\n'.join(user_list_lines), ephemeral=True)
 
 @bot.hybrid_command(name="revoke_user", description="Révoquer un utilisateur")
 @app_commands.describe(user_id="ID de l'utilisateur à révoquer")
 async def revoke_user_cmd(ctx: commands.Context, user_id: int):
     if not is_admin_check(ctx):
-        await ctx.send("Vous n'êtes pas autorisé à utiliser cette commande.", ephemeral=True)
+        await ctx.send(f"Vous n'êtes pas autorisé à utiliser cette commande. {fail_emoji}", ephemeral=True)
         return
 
     # Verify user exists before revoking
     user = await get_user(user_id)
     if not user:
-        await ctx.send(f"Utilisateur {user_id} introuvable.", ephemeral=True)
+        await ctx.send(f"Utilisateur {user_id} introuvable. {fail_emoji}", ephemeral=True)
         return
 
     user_bots = await get_user_bots(user_id)
@@ -297,7 +311,7 @@ async def revoke_user_cmd(ctx: commands.Context, user_id: int):
     if os.path.exists(user_dir):
         shutil.rmtree(user_dir)
 
-    await ctx.send(f"Utilisateur {user_id} révoqué. Tous ses bots ont été arrêtés et supprimés.", ephemeral=True)
+    await ctx.send(f"Utilisateur {user_id} révoqué. Tous ses bots ont été arrêtés et supprimés. {check_mark}", ephemeral=True)
 
 
 @bot.hybrid_command(name="grant_script", description="[ADMIN] Accorder l'accès à un script premium")
@@ -317,8 +331,6 @@ async def grant_script_cmd(ctx: commands.Context, target_user: discord.User, scr
         return
     
     await grant_script_access(target_user.id, script_name, ctx.author.id)
-    
-    # Copier le script chez l'utilisateur si déjà enregistré
     user_data = await get_user(target_user.id)
     if user_data:
         user_scripts_dir = os.path.join(USERS_DIR, str(target_user.id), "scripts")
@@ -327,7 +339,7 @@ async def grant_script_cmd(ctx: commands.Context, target_user: discord.User, scr
         dest_path = os.path.join(user_scripts_dir, script_name)
         shutil.copy(premium_script_path, dest_path)
     
-    await ctx.send(f"✅ Script premium '{script_name}' accordé à {target_user.mention}.", ephemeral=True)
+    await ctx.send(f"Script premium '{script_name}' accordé à {target_user.mention}. {check_mark}", ephemeral=True)
 
 @bot.hybrid_command(name="revoke_script", description="[ADMIN] Révoquer l'accès à un script premium")
 @app_commands.describe(
@@ -336,7 +348,7 @@ async def grant_script_cmd(ctx: commands.Context, target_user: discord.User, scr
 )
 async def revoke_script_cmd(ctx: commands.Context, target_user: discord.User, script_name: str):
     if not is_admin_check(ctx):
-        await ctx.send("Vous n'êtes pas autorisé.", ephemeral=True)
+        await ctx.send(f"Vous n'êtes pas autorisé {fail_emoji}.", ephemeral=True)
         return
     
     await revoke_script_access(target_user.id, script_name)
@@ -347,7 +359,7 @@ async def revoke_script_cmd(ctx: commands.Context, target_user: discord.User, sc
     if os.path.exists(script_path_in_user_dir):
         os.remove(script_path_in_user_dir)
         
-    await ctx.send(f"✅ Script premium '{script_name}' révoqué pour {target_user.mention}.", ephemeral=True)
+    await ctx.send(f"Script premium '{script_name}' révoqué pour {target_user.mention} {check_mark}.", ephemeral=True)
 
 @bot.hybrid_command(name="list_user_scripts", description="[ADMIN] Voir les scripts d'un utilisateur")
 @app_commands.describe(target_user="L'utilisateur")
@@ -370,14 +382,14 @@ async def list_user_scripts_cmd(ctx: commands.Context, target_user: discord.User
 @bot.hybrid_command(name="register", description="Enregistrer un utilisateur avec un secret")
 @app_commands.describe(secret_id="ID du secret")
 async def register_cmd(ctx: commands.Context, secret_id: str):
-    secret, error = await validate_secret(secret_id) # ✅ AJOUT DE AWAIT
+    secret, error = await validate_secret(secret_id) 
     
     if error:
         await ctx.send(f"Erreur : {error}", ephemeral=True)
         return
     
     if secret["user_id"] != ctx.author.id:
-        await ctx.send("Ce secret n'est pas valide pour votre ID utilisateur.", ephemeral=True)
+        await ctx.send(f"Ce secret n'est pas valide pour votre ID utilisateur {fail_emoji}.", ephemeral=True)
         return
 
     if await get_user(ctx.author.id):
@@ -395,7 +407,7 @@ async def register_cmd(ctx: commands.Context, secret_id: str):
     scripts_dest_dir = os.path.join(user_dir, "scripts")
     os.makedirs(scripts_dest_dir, exist_ok=True)
 
-    # Copy basic scripts for new user
+    
     basic_scripts_dir = os.path.join(SCRIPTS_ADMIN_DIR, "basic")
     if os.path.exists(basic_scripts_dir):
         for item_name in os.listdir(basic_scripts_dir):
@@ -404,44 +416,49 @@ async def register_cmd(ctx: commands.Context, secret_id: str):
 
             if os.path.isfile(src_path) and src_path.endswith('.py'):
                 shutil.copy(src_path, scripts_dest_dir)
-            elif os.path.isdir(src_path): # Should not happen with current basic scripts, but for robustness
+            elif os.path.isdir(src_path): 
                 shutil.copytree(src_path, dest_path, dirs_exist_ok=True)
 
-    await ctx.send(f"Vous êtes enregistré avec succès ! Max bots : {max_bots}. Utilisez `/add_bot` pour ajouter vos bots.", ephemeral=True)
+    await ctx.send(f"Vous êtes enregistré avec succès {check_mark}! Max bots : {max_bots}. Utilisez `/add_bot` pour ajouter vos bots.", ephemeral=True)
 
 @bot.hybrid_command(name="renew", description="Renouveler votre abonnement avec un nouveau secret")
 @app_commands.describe(secret_id="ID du nouveau secret")
 async def renew_cmd(ctx: commands.Context, secret_id: str):
-    """Renew an expired user account for another 30 days."""
     user_id = ctx.author.id
     
-    secret, error = await validate_secret(secret_id) # ✅ AJOUT DE AWAIT
+    secret, error = await validate_secret(secret_id) 
     
     if error:
         await ctx.send(f"Erreur : {error}", ephemeral=True)
         return
     
     if secret["user_id"] != user_id:
-        await ctx.send("Ce secret n'est pas valide pour votre ID utilisateur.", ephemeral=True)
+        await ctx.send(f"Ce secret n'est pas valide pour votre ID utilisateur {fail_emoji}.", ephemeral=True)
         return
     
     try:
         await renew_user_account(user_id, secret["max_bots"])
         await consume_secret(secret_id)
-        
-        # Invalidate cache
+
         _user_cache.pop(user_id, None)
+        user_scripts_dir = os.path.join(USERS_DIR, str(user_id), "scripts")
+        os.makedirs(user_scripts_dir, exist_ok=True) 
+
+        available_scripts = await get_available_scripts_for_user(user_id)
+        for script_info in available_scripts:
+            dest_path = os.path.join(user_scripts_dir, script_info["name"])
+            try:
+                shutil.copy(script_info["path"], dest_path)
+                print(f" Script '{script_info['name']}' re-copied for user {user_id} during renewal.")
+            except Exception as e:
+                print(f" Error re-copying script '{script_info['name']}' for user {user_id} during renewal: {e}")
         
-        await ctx.send(f"Votre abonnement a été renouvelé pour 30 jours ! Vos bots sont toujours là, utilisez `/my_bots` pour les voir.", ephemeral=True)
+        await ctx.send(f"Votre abonnement a été renouvelé pour 30 jours ! Vos bots sont toujours là . Utilisez `/my_bots` pour les voir.", ephemeral=True)
     except Exception as e:
-        await ctx.send(f"Erreur lors du renouvellement : {e}", ephemeral=True)
+        await ctx.send(f"Erreur lors du renouvellement {fail_emoji}", ephemeral=True)
 
 @bot.hybrid_command(name="add_bot", description="Ajouter un bot")
 @app_commands.describe(nom="Nom du bot", token="Token du bot", script="Script a utiliser")
-# @app_commands.choices(script=[ # REMOVED: Replaced by dynamic autocomplete
-#     app_commands.Choice(name="utility.py", value="utility.py"),
-#     app_commands.Choice(name="basic_test_script.py", value="basic_test_script.py")
-# ])
 async def add_bot_cmd(ctx: commands.Context, nom: str, token: str, script: str):
     """Ajouter un bot avec copie du script si nécessaire."""
     if not is_valid_bot_name(nom):
@@ -458,7 +475,7 @@ async def add_bot_cmd(ctx: commands.Context, nom: str, token: str, script: str):
         await ctx.send("Utilisateur non enregistré. Utilisez d'abord `/register`.", ephemeral=True)
         return
 
-    max_bots = user_data[1] # user_data is a Row object, user_data[1] is max_bots
+    max_bots = user_data[1]
     bots = await get_user_bots(user_id)
     if len(bots) >= max_bots:
         await ctx.send(f"Vous avez déjà {len(bots)} bots. Limite atteinte ({max_bots} bots).", ephemeral=True)
@@ -469,38 +486,37 @@ async def add_bot_cmd(ctx: commands.Context, nom: str, token: str, script: str):
         await ctx.send(f"Un bot nommé `{nom}` existe déjà.", ephemeral=True)
         return
     
-    # ✅ Vérifier l'accès au script
+   
     available_scripts = await get_available_scripts_for_user(user_id)
     script_info = next((s for s in available_scripts if s["name"] == script), None)
     
     if not script_info:
-        await ctx.send(f"❌ Vous n'avez pas accès au script '{script}'.", ephemeral=True)
+        await ctx.send(f" Vous n'avez pas accès au script '{script}' {fail_emoji}", ephemeral=True)
         return
     
-    # Copier le script depuis le bon emplacement
+    
     user_scripts_dir = os.path.join(USERS_DIR, str(user_id), "scripts")
     os.makedirs(user_scripts_dir, exist_ok=True)
     
     user_script_path = os.path.join(user_scripts_dir, script)
     
-    # Only copy if the script doesn't exist in the user's directory or is outdated (optional, simpler to just ensure it's there)
+    
     if not os.path.exists(user_script_path):
         try:
             shutil.copy(script_info["path"], user_script_path)
-            print(f"✅ Script '{script}' ({script_info['type']}) copied for user {user_id}")
+            print(f" Script '{script}' ({script_info['type']}) copied for user {user_id}")
         except Exception as e:
-            await ctx.send(f"❌ Erreur copie du script: {e}", ephemeral=True)
+            await ctx.send(f" Erreur copie du script {fail_emoji}", ephemeral=True)
             return
     
     encrypted_token = encrypt_token(token)
     await add_bot_to_db(user_id, nom, encrypted_token, script)
     
-    # ✅ Invalider le cache
+
     _user_cache.pop(user_id, None)
     _bot_cache.pop((user_id, nom), None)
-    
     script_type_display = "PREMIUM" if script_info["type"] == "premium" else "BASIC"
-    await ctx.send(f"✅ Bot `{nom}` ajouté avec le script [{script_type_display}] `{script}`. Utilisez `/start_bot {nom}` pour le démarrer.", ephemeral=True)
+    await ctx.send(f"Bot `{nom}` ajouté avec le script [{script_type_display}] `{script}` {check_mark}. Utilisez `/start_bot {nom}` pour le démarrer.", ephemeral=True)
 
 @add_bot_cmd.autocomplete('script')
 async def script_autocomplete(interaction: discord.Interaction, current: str):
@@ -509,10 +525,7 @@ async def script_autocomplete(interaction: discord.Interaction, current: str):
     
     available_scripts = await get_available_scripts_for_user(user_id)
     
-    # Filtrer selon ce que l'utilisateur tape
     filtered = [s for s in available_scripts if current.lower() in s["name"].lower()]
-    
-    # Retourner max 25 choix (limite Discord)
     return [
         app_commands.Choice(name=s["display"], value=s["name"])
         for s in filtered[:25]
@@ -529,42 +542,40 @@ async def start_bot_cmd(ctx: commands.Context, nom: str):
         return
 
     if not is_valid_bot_name(nom):
-        await ctx.send("Nom de bot invalide.", ephemeral=True)
+        await ctx.send(f"Nom de bot invalide {fail_emoji}.", ephemeral=True)
         return
 
     now = time.time()
     last = _start_cooldowns[user_id]
     if now - last < _START_COOLDOWN_SECONDS:
-        await ctx.send(f"Vous devez attendre {int(_START_COOLDOWN_SECONDS - (now - last))}s avant de démarrer/redémarrer un bot.", ephemeral=True)
+        await ctx.send(f"Vous devez attendre {int(_START_COOLDOWN_SECONDS - (now - last))}s avant de démarrer/redémarrer un bot {fail_emoji}.", ephemeral=True)
         return
     _start_cooldowns[user_id] = now
 
     bot_data = await get_bot(user_id, nom)
     if not bot_data:
-        await ctx.send("Bot non trouvé ou non autorisé.", ephemeral=True)
+        await ctx.send(f"Bot non trouvé ou non autorisé {fail_emoji}.", ephemeral=True)
         return
     
     current_status = get_bot_status(user_id, nom)
     if current_status == "running":
         await ctx.send(f"Le bot `{nom}` est déjà en cours d'exécution.", ephemeral=True)
         return
-    # ✅ Gérer le cas "starting"
     if current_status == "starting":
         await ctx.send(f"Le bot `{nom}` est déjà en cours de démarrage. Veuillez patienter.", ephemeral=True)
         return
 
+    await ctx.defer(ephemeral=True)
+
     try:
         if await start_bot_process(user_id, nom, bot_data[3], bot_data[4]):
-            # Ne pas mettre à jour le statut DB ici, car la connexion n'est pas encore confirmée.
-            # Le statut "starting" est géré par get_bot_status.
-            await ctx.send(f"Bot `{nom}` démarré. En attente de sa connexion à Discord...", ephemeral=True)
+            await ctx.edit_original_response(content=f"Bot `{nom}` démarré. En attente de sa connexion à Discord...") 
         else:
-            await ctx.send(
-                f"Impossible de démarrer le bot `{nom}`. Vérifiez les logs pour plus de détails: `logs/{user_id}/{nom}.log`",
-                ephemeral=True
+            await ctx.edit_original_response( 
+                content=f"Impossible de démarrer le bot `{nom}`. Vérifiez les logs pour plus de détails: `logs/{user_id}/{nom}.log`"
             )
     except Exception as e:
-        await ctx.send(f"Erreur inattendue : `{e}`. Consultez `logs/{user_id}/{nom}.log`.", ephemeral=True)
+        await ctx.edit_original_response(content=f"Erreur inattendue : `{e}`. Consultez `logs/{user_id}/{nom}.log`.") 
 
 @bot.hybrid_command(name="stop_bot", description="Arrêter un de vos bots")
 @app_commands.describe(nom="Nom du bot")
@@ -586,11 +597,13 @@ async def stop_bot_cmd(ctx: commands.Context, nom: str):
         await ctx.send(f"Le bot `{nom}` est déjà arrêté.", ephemeral=True)
         return
 
+    await ctx.defer(ephemeral=True) 
+
     if stop_bot_process(user_id, nom):
         await update_bot_status(user_id, nom, "stopped")
-        await ctx.send(f"Bot `{nom}` arrêté.", ephemeral=True)
+        await ctx.edit_original_response(content=f"Bot `{nom}` arrêté.") 
     else:
-        await ctx.send(f"Impossible d'arrêter le bot `{nom}`.", ephemeral=True)
+        await ctx.edit_original_response(content=f"Impossible d'arrêter le bot `{nom}`.") 
 
 @bot.hybrid_command(name="restart_bot", description="Redémarrer un de vos bots")
 @app_commands.describe(nom="Nom du bot")
@@ -599,11 +612,11 @@ async def restart_bot_cmd(ctx: commands.Context, nom: str):
 
     user_data = await get_user_cached(user_id)
     if not user_data:
-        await ctx.send("Vous n'êtes pas enregistré. Utilisez `/register`.", ephemeral=True)
+        await ctx.send(f"Vous n'êtes pas enregistré. Utilisez `/register`. {fail_emoji}", ephemeral=True)
         return
 
     if not is_valid_bot_name(nom):
-        await ctx.send("Nom de bot invalide.", ephemeral=True)
+        await ctx.send(f"Nom de bot invalide {fail_emoji}.", ephemeral=True)
         return
 
     now = time.time()
@@ -615,24 +628,21 @@ async def restart_bot_cmd(ctx: commands.Context, nom: str):
 
     bot_data = await get_bot(user_id, nom)
     if not bot_data:
-        await ctx.send("Bot non trouvé ou non autorisé.", ephemeral=True)
+        await ctx.send(f"Bot non trouvé ou non autorisé. {fail_emoji}", ephemeral=True)
         return
-
     await ctx.defer(ephemeral=True)
-
     stop_bot_process(user_id, nom)
-    await asyncio.sleep(1)
+    await asyncio.sleep(1) 
 
     try:
         if await start_bot_process(user_id, nom, bot_data[3], bot_data[4]):
-            await ctx.send(f"Bot `{nom}` redémarré. En attente de sa connexion à Discord...", ephemeral=True)
+            await ctx.edit_original_response(content=f"Bot `{nom}` redémarré. En attente de sa connexion à Discord...") 
         else:
-            await ctx.send(
-                f"Impossible de redémarrer le bot `{nom}`. Vérifiez les logs pour plus de détails: `logs/{user_id}/{nom}.log`",
-                ephemeral=True
+            await ctx.edit_original_response( 
+                content=f"Impossible de redémarrer le bot `{nom}` {fail_emoji}"
             )
     except Exception as e:
-        await ctx.send(f"Erreur inattendue lors du redémarrage : `{e}`. Consultez `logs/{user_id}/{nom}.log`.", ephemeral=True)
+        await ctx.edit_original_response(content=f"Erreur inattendue lors du redémarrage : `{e}`.") 
 
 @bot.hybrid_command(name="update_token", description="Mettre à jour le token d'un de vos bots")
 @app_commands.describe(nom="Nom du bot", new_token="Nouveau token")
@@ -641,17 +651,17 @@ async def update_token_cmd(ctx: commands.Context, nom: str, new_token: str):
 
     user_data = await get_user_cached(user_id)
     if not user_data:
-        await ctx.send("Vous n'êtes pas enregistré. Utilisez `/register`.", ephemeral=True)
+        await ctx.send(f"Vous n'êtes pas enregistré. Utilisez `/register` {fail_emoji}.", ephemeral=True)
         return
 
     bot_data = await get_bot(user_id, nom)
     if not bot_data:
-        await ctx.send("Bot non trouvé ou non autorisé.", ephemeral=True)
+        await ctx.send(f"Bot non trouvé ou non autorisé {fail_emoji}.", ephemeral=True)
         return
 
     was_running = False
     current_status = get_bot_status(user_id, nom)
-    if current_status in ["running", "starting"]: # ✅ Gérer aussi "starting"
+    if current_status in ["running", "starting"]:
         stop_bot_process(user_id, nom)
         was_running = True
         await asyncio.sleep(1)
@@ -665,13 +675,13 @@ async def update_token_cmd(ctx: commands.Context, nom: str, new_token: str):
                 await ctx.send(f"Token mis à jour et bot redémarré. En attente de sa connexion à Discord...", ephemeral=True)
             else:
                 await ctx.send(
-                    f"Token mis à jour, mais impossible de redémarrer le bot `{nom}`. Vérifiez les logs.",
+                    f"Token mis à jour, mais impossible de redémarrer le bot `{nom}` contactez lequipe de support si le probleme persiste.",
                     ephemeral=True
                 )
         except Exception as e:
             await ctx.send(f"Token mis à jour, mais erreur inattendue au redémarrage: {e}", ephemeral=True)
     else:
-        await ctx.send(f"Token du bot `{nom}` mis à jour.", ephemeral=True)
+        await ctx.send(f"Token du bot `{nom}` mis à jour. {check_mark}", ephemeral=True)
 
 @bot.hybrid_command(name="delete_bot", description="Supprimer un de vos bots")
 @app_commands.describe(nom="Nom du bot")
@@ -680,19 +690,19 @@ async def delete_bot_cmd(ctx: commands.Context, nom: str):
 
     user_data = await get_user_cached(user_id)
     if not user_data:
-        await ctx.send("Vous n'êtes pas enregistré. Utilisez `/register`.", ephemeral=True)
+        await ctx.send(f"Vous n'êtes pas enregistré. Utilisez `/register` {fail_emoji}.", ephemeral=True)
         return
 
     bot_data = await get_bot(user_id, nom)
     if not bot_data:
-        await ctx.send("Bot non trouvé ou non autorisé.", ephemeral=True)
+        await ctx.send(f"Bot non trouvé ou non autorisé {fail_emoji}.", ephemeral=True)
         return
 
     if get_bot_status(user_id, nom) == "running":
         stop_bot_process(user_id, nom)
     
     await delete_bot(user_id, nom)
-    await ctx.send(f"Bot `{nom}` supprimé.", ephemeral=True)
+    await ctx.send(f"Bot `{nom}` supprimé. {check_mark}", ephemeral=True)
 
 @bot.hybrid_command(name="my_bots", description="Lister vos bots")
 async def my_bots_cmd(ctx: commands.Context):
@@ -700,12 +710,12 @@ async def my_bots_cmd(ctx: commands.Context):
 
     user_data = await get_user_cached(user_id)
     if not user_data:
-        await ctx.send("Vous n'êtes pas enregistré. Utilisez `/register`.", ephemeral=True)
+        await ctx.send(f"Vous n'êtes pas enregistré. Utilisez `/register`. {fail_emoji}", ephemeral=True)
         return
 
     user_bots = await get_user_bots(user_id)
     if not user_bots:
-        await ctx.send("Vous n'avez aucun bot enregistré. Utilisez `/add_bot`.", ephemeral=True)
+        await ctx.send(f"Vous n'avez aucun bot enregistré. Utilisez `/add_bot`. {fail_emoji}", ephemeral=True)
         return
 
     lines = ["Vos bots:"]
@@ -729,12 +739,12 @@ async def bot_info_cmd(ctx: commands.Context, nom: str):
     user_id = ctx.author.id
 
     if not is_valid_bot_name(nom):
-        await ctx.send("Nom de bot invalide.", ephemeral=True)
+        await ctx.send(f"Nom de bot invalide {fail_emoji}.", ephemeral=True)
         return
 
     bot_data = await get_bot(user_id, nom)
     if not bot_data:
-        await ctx.send("Bot non trouvé ou non autorisé.", ephemeral=True)
+        await ctx.send(f"Bot non trouvé ou non autorisé {fail_emoji}.", ephemeral=True)
         return
 
     current_status = get_bot_status(user_id, nom)
@@ -743,8 +753,7 @@ async def bot_info_cmd(ctx: commands.Context, nom: str):
         f"Infos sur `{nom}`:\n"
         f"Script: {bot_data[4]}\n"
         f"Statut: {current_status}\n"
-        f"Token: (sécurisé). Utilisez `/update_token` pour le changer.\n"
-        f"Logs: `logs/{user_id}/{nom}.log`",
+        f"Token: (sécurisé). Utilisez `/update_token` pour le changer.\n",
         ephemeral=True
     )
 
@@ -755,7 +764,7 @@ async def my_scripts_cmd(ctx: commands.Context):
     
     user_data = await get_user_cached(user_id)
     if not user_data:
-        await ctx.send("Vous n'êtes pas enregistré. Utilisez `/register`.", ephemeral=True)
+        await ctx.send(f"Vous n'êtes pas enregistré. Utilisez `/register` {fail_emoji}.", ephemeral=True)
         return
     
     available = await get_available_scripts_for_user(user_id)
@@ -764,19 +773,19 @@ async def my_scripts_cmd(ctx: commands.Context):
         await ctx.send("Aucun script disponible.", ephemeral=True)
         return
     
-    # Grouper par type
+
     basic = [s for s in available if s["type"] == "basic"]
     premium = [s for s in available if s["type"] == "premium"]
     
     msg = "**Vos scripts disponibles:**\n\n"
     
     if basic:
-        msg += "**📦 Scripts de Base:**\n"
+        msg += "** Scripts de Base:**\n"
         msg += "\n".join([f"- `{s['name']}`" for s in basic])
         msg += "\n\n"
     
     if premium:
-        msg += "**⭐ Scripts Premium:**\n"
+        msg += "** Scripts Premium:**\n"
         msg += "\n".join([f"- `{s['name']}`" for s in premium])
     
     await ctx.send(msg, ephemeral=True)
