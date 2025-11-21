@@ -1,19 +1,11 @@
-"""
-Script de test basique pour le Bot Manager.
-Contient une seule commande simple pour confirmer que le bot est en ligne.
-"""
-
 import discord
 from discord.ext import commands
 import os
 import sys
 
-# --- BOT SETUP --- #
-# Les intents par défaut sont suffisants pour ce bot simple
 intents = discord.Intents.default()
-intents.message_content = True # Nécessaire pour lire les messages et commandes
+intents.message_content = True
 
-# Le préfixe sera '!' par défaut pour ce bot de test
 bot = commands.Bot(command_prefix="!", intents=intents, description="Un bot de test basique.")
 
 class BasicTestCog(commands.Cog):
@@ -29,15 +21,12 @@ class BasicTestCog(commands.Cog):
     async def on_ready(self):
         print(f"Bot de test '{self.bot.user}' est connecte a Discord. Prefix: !")
         print(f"Nombre de serveurs: {len(self.bot.guilds)}")
-        # Signal pour le Bot Manager
         print("[BOT_MANAGER_SIGNAL] CONNEXION_REUSSIE")
 
 async def main():
     async with bot:
-        # Ajoute le cog de test au bot
         await bot.add_cog(BasicTestCog(bot))
         
-        # Le token sera fourni par le Bot Manager via la variable d'environnement
         TOKEN = os.getenv("DISCORD_BOT_TOKEN")
         
         if not TOKEN:
@@ -55,4 +44,3 @@ if __name__ == "__main__":
         print("Bot de test arrete.")
     except Exception as e:
         print(f"Une erreur est survenue lors du demarrage du bot de test: {e}")
-

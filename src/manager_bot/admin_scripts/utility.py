@@ -1,25 +1,16 @@
-"""
-Bot Discord Utilitaire - Script pour les utilisateurs.
-Charge sa configuration (token) via la variable d'environnement DISCORD_BOT_TOKEN
-fournie par le Bot Manager. Le prefixe est fixe.
-"""
-
 import discord
 from discord.ext import commands
 from datetime import timedelta
 import os
 import sys
 
-# --- CONFIG SIMPLE --- #
-# Le token vient TOUJOURS de la variable d'environnement fournie par le Bot Manager
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-PREFIX = "!" # Le prefixe est fixe pour ce bot utilisateur
+PREFIX = "!"
 
 if not TOKEN:
     print("ERREUR: Le token du bot est manquant. Assurez-vous que DISCORD_BOT_TOKEN est defini.")
     sys.exit(1)
 
-# --- BOT SETUP --- #
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -44,7 +35,7 @@ class Utility(commands.Cog):
     @commands.command(name='snipe')
     async def snipe_message(self, ctx):
         if ctx.channel.id not in self.snipe_cache:
-            await ctx.send("Aucun message a sniper.")
+            await ctx.send(f"Aucun message a sniper.")
             return
         data = self.snipe_cache[ctx.channel.id]
         await ctx.send(f"Message supprime par {data['author'].display_name}:\n>>> {data['content']}")
@@ -98,7 +89,7 @@ class Utility(commands.Cog):
     @commands.has_permissions(manage_messages=True)
     async def clear_messages(self, ctx, amount: int = 10, member: discord.Member = None):
         if not 1 <= amount <= 100:
-            await ctx.send("Entre 1 et 100 messages.")
+            await ctx.send(f"Entre 1 et 100 messages.")
             return
         
         await ctx.message.delete()
@@ -117,14 +108,14 @@ class Utility(commands.Cog):
     async def mute(self, ctx, member: discord.Member, duration: str, *, reason="Aucune raison"):
         dur = self.parse_duration(duration)
         if not dur:
-            await ctx.send("Format invalide (ex: 10m, 1h, 1d)")
+            await ctx.send(f"Format invalide (ex: 10m, 1h, 1d)")
             return
         
         try:
             await member.timeout(dur, reason=reason)
             await ctx.send(f"{member.display_name} mute pour {duration}.")
         except discord.Forbidden:
-            await ctx.send("Pas les permissions.")
+            await ctx.send(f"Pas les permissions.")
 
     @commands.command(name='unmute')
     @commands.has_permissions(moderate_members=True)
@@ -137,20 +128,20 @@ class Utility(commands.Cog):
             await member.timeout(None)
             await ctx.send(f"{member.display_name} peut parler.")
         except discord.Forbidden:
-            await ctx.send("Pas les permissions.")
+            await ctx.send(f"Pas les permissions.")
 
     @commands.command(name='kick')
     @commands.has_permissions(kick_members=True)
     async def kick_member(self, ctx, member: discord.Member, *, reason="Aucune raison"):
         if member == ctx.author:
-            await ctx.send("Tu peux pas te kick!")
+            await ctx.send(f"Tu peux pas te kick!")
             return
         
         try:
             await member.kick(reason=reason)
             await ctx.send(f"{member.display_name} kick.")
         except discord.Forbidden:
-            await ctx.send("Pas les permissions.")
+            await ctx.send(f"Pas les permissions.")
 
     @commands.command(name='ban')
     @commands.has_permissions(ban_members=True)
@@ -159,7 +150,7 @@ class Utility(commands.Cog):
             await member.ban(reason=reason)
             await ctx.send(f"{member.display_name} banni.")
         except discord.Forbidden:
-            await ctx.send("Pas les permissions.")
+            await ctx.send(f"Pas les permissions.")
 
     @commands.command(name='unban')
     @commands.has_permissions(ban_members=True)
@@ -178,7 +169,7 @@ class Utility(commands.Cog):
             await ctx.guild.unban(target)
             await ctx.send(f"{target.name} debanni.")
         else:
-            await ctx.send("User introuvable dans les bannis.")
+            await ctx.send(f"User introuvable dans les bannis.")
 
     @commands.command(name='help')
     async def custom_help(self, ctx, *, cmd: str = None):
@@ -199,7 +190,6 @@ class Utility(commands.Cog):
         print(f"✅ Bot {self.bot.user} connecte!")
         print(f"   Prefixe: {PREFIX}")
         print(f"   Serveurs: {len(self.bot.guilds)}")
-        # ✅ Signal de connexion réussi pour le Bot Manager
         print("[BOT_MANAGER_SIGNAL] CONNEXION_REUSSIE")
 
 async def main():

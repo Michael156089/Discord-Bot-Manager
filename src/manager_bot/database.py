@@ -31,7 +31,9 @@ async def init_db():
             max_bots INTEGER NOT NULL,
             registered_at REAL NOT NULL,
             expires_at REAL NOT NULL,
-            revoked INTEGER DEFAULT 0
+            revoked INTEGER DEFAULT 0,
+            last_crash_notification REAL DEFAULT 0,
+            last_expiry_notification REAL DEFAULT 0
         )
     """)
     await db.execute("""
@@ -63,6 +65,18 @@ async def init_db():
             PRIMARY KEY (user_id, script_name),
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         )
+    """)
+
+
+    await db.execute("""
+    CREATE TABLE IF NOT EXISTS audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp REAL NOT NULL,
+        admin_id INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        target_user_id INTEGER,
+        details TEXT
+    )
     """)
     await db.commit()
 
@@ -305,3 +319,62 @@ async def is_script_allowed(user_id: int, script_name: str) -> bool:
     )
     row = await cursor.fetchone()
     return row is not None
+
+
+async def log_admin_action(admin_id: int, action: str, target_user_id: int = None, details: str = None):
+    """Log an admin action for audit trail."""
+    db = await get_db()
+    now = time.time()
+    
+    await db.execute(
+        "INSERT INTO audit_logs (timestamp, admin_id, action, target_user_id, details) VALUES (?, ?, ?, ?, ?)",
+        (now, admin_id, action, target_user_id, details)
+    )
+    await db.commit()
+    print(f"Audit: Admin {admin_id} performed '{action}' on user {target_user_id}")
+
+async def get_audit_logs(limit: int = 50):
+    """Retrieve recent audit logs."""
+    db = await get_db()
+    
+    cursor = await db.execute(
+        "SELECT id, timestamp, admin_id, action, target_user_id, details FROM audit_logs ORDER BY timestamp DESC LIMIT ?",
+        (limit,)
+    )
+    return await cursor.fetchall()
+async def update_crash_notification_time(user_id: int):
+    """Update the last crash notification timestamp for a user."""
+    db = await get_db()
+    now = time.time()
+    
+    await db.execute(
+        "UPDATE users SET last_crash_notification = ? WHERE id = ?",
+        (now, user_id)
+    )
+    await db.commit()
+async def update_expiry_notification_time(user_id: int):
+    """Update the last expiry warning notification timestamp for a user."""
+    db = await get_db()
+    now = time.time()
+    
+    await db.execute(
+        "UPDATE users SET last_expiry_notification = ? WHERE id = ?",
+        (now, user_id)
+    )
+    await db.commit()
+async def get_users_needing_expiry_warning(days_before: int = 5):
+    """Get users whose accounts expire soon and haven't been warned recently."""
+    db = await get_db()
+    now = time.time()
+    warning_threshold = now + (days_before * 24 * 3600)
+    notification_cooldown = now - (24 * 3600)
+    
+    cursor = await db.execute(
+        """SELECT id, expires_at FROM users 
+           WHERE revoked = 0 
+           AND expires_at < ? 
+           AND expires_at > ? 
+           AND (last_expiry_notification < ? OR last_expiry_notification = 0)""",
+        (warning_threshold, now, notification_cooldown)
+    )
+    return await cursor.fetchall()

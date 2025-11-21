@@ -1,6 +1,3 @@
-"""
-Script de modération avancée avec système de warns, auto-mod, etc.
-"""
 import discord
 from discord.ext import commands
 import os
@@ -18,8 +15,7 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents, description="Bot de modération avancée", help_command=None)
 
-# Système de warns
-warns_file = "warns.json" # This will be in the user's bot scripts directory
+warns_file = "warns.json"
 
 def load_warns():
     if os.path.exists(warns_file):
@@ -59,7 +55,6 @@ class AdvancedModeration(commands.Cog):
         warn_count = len(warns[user_id])
         await ctx.send(f"⚠️ {member.mention} a été averti. Raison: {reason}\nTotal: {warn_count} warn(s)")
         
-        # Auto-sanctions
         if warn_count >= 3:
             try:
                 await member.ban(reason=f"3 warns atteints")

@@ -4,7 +4,6 @@ import sys
 from .config import USERS_DIR, LOGS_DIR
 from .encryption import decrypt_token
 
-# ✅ Structure: {(user_id, bot_name): (proc, is_connected)}
 active_processes = {}
 
 def _setup_bot_environment(user_id: int, bot_name: str, decrypted_token: str):
@@ -19,7 +18,6 @@ def _setup_bot_environment(user_id: int, bot_name: str, decrypted_token: str):
     env = os.environ.copy()
     env["DISCORD_BOT_TOKEN"] = decrypted_token
     env["PYTHONPATH"] = user_bot_scripts_dir + os.pathsep + env.get("PYTHONPATH", "")
-    # ✅ CRITIQUE: Mode unbuffered pour flush immédiat des logs
     env["PYTHONUNBUFFERED"] = "1"
 
     return user_bot_base_dir, user_bot_scripts_dir, log_file_path, env
@@ -34,7 +32,6 @@ async def start_bot_process(user_id: int, bot_name: str, bot_token: str, script:
     
     key = (user_id, bot_name)
     
-    # ✅ Vérifier si déjà en cours
     if key in active_processes:
         proc, is_connected = active_processes[key]
         if proc.returncode is None:
@@ -45,7 +42,6 @@ async def start_bot_process(user_id: int, bot_name: str, bot_token: str, script:
     
     full_script_path = os.path.join(user_bot_scripts_dir, script)
     
-    # ✅ Vérification détaillée avec debug
     if not os.path.exists(full_script_path):
         print(f"❌ Script '{script}' introuvable:")
         print(f"   Chemin: {full_script_path}")
@@ -54,7 +50,6 @@ async def start_bot_process(user_id: int, bot_name: str, bot_token: str, script:
             print(f"   Fichiers: {os.listdir(user_bot_scripts_dir)}")
         return False
 
-    # ✅ Ouvrir en mode append avec line buffering
     try:
         log_file_handle = open(log_file_path, "a", buffering=1, encoding='utf-8')
         log_file_handle.write(f"\n{'='*60}\n")
@@ -74,11 +69,9 @@ async def start_bot_process(user_id: int, bot_name: str, bot_token: str, script:
             cwd=user_bot_scripts_dir
         )
         
-        # ✅ Stocker avec is_connected=False
         active_processes[key] = (proc, False)
         print(f"✅ Bot '{bot_name}' (PID {proc.pid}) lancé. Attente connexion Discord...")
         
-        # ✅ Fermer le handle après 2 secondes (le processus garde sa propre référence)
         asyncio.create_task(_close_log_handle_delayed(log_file_handle))
         
         return True
@@ -104,19 +97,17 @@ def stop_bot_process(user_id: int, bot_name: str) -> bool:
     proc, _ = active_processes[key]
     
     if proc.returncode is not None:
-        # Process already terminated, just clean up our record
         del active_processes[key]
         return False
     
     try:
-        proc.terminate() # Request graceful termination
+        proc.terminate()
         
-        # Give it a moment to terminate gracefully
         try:
-            proc.wait(timeout=3) # Wait up to 3 seconds
+            proc.wait(timeout=3)
         except asyncio.TimeoutError:
             print(f"⚠️ Bot '{bot_name}' (user {user_id}) did not terminate gracefully, sending SIGKILL.")
-            proc.kill() # Force kill if it didn't terminate
+            proc.kill()
         
         del active_processes[key]
         print(f"🛑 Bot '{bot_name}' (user {user_id}) arrêté.")
@@ -140,43 +131,38 @@ def get_bot_status(user_id: int, bot_name: str) -> str:
 
 async def monitor_processes(bot):
     """Surveille les processus et détecte la connexion Discord."""
-    await asyncio.sleep(5)  # Délai initial
+    await asyncio.sleep(5)
     
     while True:
-        await asyncio.sleep(3)  # Vérification toutes les 3 secondes
+        await asyncio.sleep(3)
         
         to_delete = []
         
         for key, (proc, is_connected) in list(active_processes.items()):
             user_id, bot_name = key
             
-            # ✅ 1. Nettoyer processus terminés
             if proc.returncode is not None:
                 to_delete.append(key)
                 if proc.returncode != 0:
                     print(f"💥 Bot '{bot_name}' (user {user_id}) crashé (code {proc.returncode})")
                 continue
             
-            # ✅ 2. Vérifier connexion si pas encore connecté
             if not is_connected:
                 log_file_path = os.path.join(LOGS_DIR, str(user_id), f"{bot_name}.log")
                 
                 if os.path.exists(log_file_path):
                     try:
-                        # ✅ Lecture efficace: seulement les derniers 2KB
                         with open(log_file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                            f.seek(0, 2)  # Fin du fichier
+                            f.seek(0, 2)
                             file_size = f.tell()
-                            f.seek(max(0, file_size - 2048))  # Lire max 2KB
+                            f.seek(max(0, file_size - 2048))
                             tail = f.read()
                             
                             if "[BOT_MANAGER_SIGNAL] CONNEXION_REUSSIE" in tail:
                                 active_processes[key] = (proc, True)
                                 print(f"🟢 Bot '{bot_name}' (user {user_id}) connecté à Discord!")
                     except Exception as e:
-                        # Fichier verrouillé, réessayer au prochain cycle
                         pass
         
-        # ✅ 3. Supprimer les processus terminés
         for key in to_delete:
             del active_processes[key]
