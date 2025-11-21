@@ -7,11 +7,20 @@ import shutil
 import re
 import time
 from collections import defaultdict
+import discord
+from discord.ext import commands
+from discord import app_commands
+import os
+import asyncio
+import shutil
+import re
+import time
+from collections import defaultdict
 from datetime import datetime # ADDED for date formatting
 
 # Support both running as a package (relative import) and as a script (absolute import)
 
-from .config import BOT_MANAGER_TOKEN, ADMIN_IDS, USERS_DIR, SCRIPTS_ADMIN_DIR 
+from .config import BOT_MANAGER_TOKEN, ADMIN_IDS, USERS_DIR, SCRIPTS_ADMIN_DIR, LOGS_DIR
 
 from .database import (
     init_db,
@@ -29,14 +38,16 @@ from .database import (
     revoke_user,
     get_user,
     renew_user_account,
-    # New script management functions
     grant_script_access,
     revoke_script_access,
+    log_admin_action,
     get_user_allowed_scripts,
-    is_script_allowed
+    is_script_allowed,
+    get_audit_logs
 )
 from .encryption import encrypt_token, decrypt_token
-from .bot_process import start_bot_process, stop_bot_process, get_bot_status, monitor_processes
+from .bot_process import start_bot_process, stop_bot_process, get_bot_status, monitor_processes, active_processes
+from .resource_monitor import monitor_bot_resources
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -259,6 +270,7 @@ async def create_secret_cmd(ctx: commands.Context, target_user: discord.User, ma
     try:
         await target_user.send(f"Votre secret pour le Bot Manager : `{secret_id}`. Utilisez-le rapidement !")
         await ctx.send(f"Secret créé et envoyé à {target_user.mention} {check_mark}", ephemeral=True)
+        await log_admin_action(ctx.author.id, "create_secret", target_user.id, f"max_bots={max_bots}, secret={secret_id}")
     except discord.Forbidden:
         await ctx.send(f"Impossible d'envoyer un DM à {target_user.mention}. Secret créé : `{secret_id}`", ephemeral=True)
 
@@ -312,6 +324,7 @@ async def revoke_user_cmd(ctx: commands.Context, user_id: int):
         shutil.rmtree(user_dir)
 
     await ctx.send(f"Utilisateur {user_id} révoqué. Tous ses bots ont été arrêtés et supprimés. {check_mark}", ephemeral=True)
+    await log_admin_action(ctx.author.id, "revoke_user", user_id, "")
 
 
 @bot.hybrid_command(name="grant_script", description="[ADMIN] Accorder l'accès à un script premium")

@@ -1,10 +1,45 @@
+import subprocess
 import asyncio
 import os
 import sys
+import time
+from collections import defaultdict
 from .config import USERS_DIR, LOGS_DIR
 from .encryption import decrypt_token
 
 active_processes = {}
+crash_history = defaultdict(list)
+MAX_CRASHES = 3
+CRASH_WINDOW_SECONDS = 600
+
+
+def should_auto_restart(user_id: int, bot_name: str) -> bool:
+    """
+    Determine if a bot should auto-restart based on crash history.
+    Returns False if bot has crashed 3+ times in the last 10 minutes.
+    """
+    key = (user_id, bot_name)
+    now = time.time()
+    
+    if key in crash_history:
+        crash_history[key] = [t for t in crash_history[key] if now - t < CRASH_WINDOW_SECONDS]
+    
+    recent_crashes = len(crash_history.get(key, []))
+    return recent_crashes < MAX_CRASHES
+
+
+def record_crash(user_id: int, bot_name: str):
+    """Record a bot crash timestamp."""
+    key = (user_id, bot_name)
+    crash_history[key].append(time.time())
+
+
+def clear_crash_history(user_id: int, bot_name: str):
+    """Clear crash history for a bot (e.g., when manually restarted)."""
+    key = (user_id, bot_name)
+    if key in crash_history:
+        del crash_history[key]
+
 
 def _setup_bot_environment(user_id: int, bot_name: str, decrypted_token: str):
     """Prépare l'environnement et les chemins pour l'exécution du bot utilisateur."""
@@ -37,6 +72,8 @@ async def start_bot_process(user_id: int, bot_name: str, bot_token: str, script:
         if proc.returncode is None:
             print(f"⚠️ Processus pour '{bot_name}' déjà en cours (PID {proc.pid})")
             return True
+    
+    clear_crash_history(user_id, bot_name)
     
     user_bot_base_dir, user_bot_scripts_dir, log_file_path, env = _setup_bot_environment(user_id, bot_name, decrypted_token)
     
@@ -145,6 +182,14 @@ async def monitor_processes(bot):
                 to_delete.append(key)
                 if proc.returncode != 0:
                     print(f"💥 Bot '{bot_name}' (user {user_id}) crashé (code {proc.returncode})")
+                    
+                    record_crash(user_id, bot_name)
+                    
+                    if should_auto_restart(user_id, bot_name):
+                        print(f"🔄 '{bot_name}' pourra être redémarré automatiquement")
+                    else:
+                        print(f"🛑 Bot '{bot_name}' a crashé trop souvent. Redémarrage automatique désactivé.")
+                        
                 continue
             
             if not is_connected:
