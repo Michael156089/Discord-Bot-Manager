@@ -13,7 +13,6 @@ async def get_db():
         _db_connection.row_factory = aiosqlite.Row
     return _db_connection
 
-# ✅ AJOUT: Fonction manquante pour fermer la DB
 async def close_db():
     """Close the database connection."""
     global _db_connection
@@ -25,6 +24,8 @@ async def close_db():
 async def init_db():
     """Initialize the database."""
     db = await get_db()
+    
+    # Users table with is_vip
     await db.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY,
@@ -32,10 +33,13 @@ async def init_db():
             registered_at REAL NOT NULL,
             expires_at REAL NOT NULL,
             revoked INTEGER DEFAULT 0,
+            is_vip INTEGER DEFAULT 0,
             last_crash_notification REAL DEFAULT 0,
             last_expiry_notification REAL DEFAULT 0
         )
     """)
+    
+    # Bots table
     await db.execute("""
         CREATE TABLE IF NOT EXISTS bots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,6 +51,8 @@ async def init_db():
             FOREIGN KEY(user_id) REFERENCES users(id)
         )
     """)
+    
+    # Secrets table
     await db.execute("""
         CREATE TABLE IF NOT EXISTS secrets (
             id TEXT PRIMARY KEY,
@@ -56,6 +62,8 @@ async def init_db():
             used INTEGER DEFAULT 0
         )
     """)
+    
+    # User Scripts table
     await db.execute("""
         CREATE TABLE IF NOT EXISTS user_scripts (
             user_id INTEGER,
@@ -67,7 +75,7 @@ async def init_db():
         )
     """)
 
-
+    # Audit Logs table
     await db.execute("""
     CREATE TABLE IF NOT EXISTS audit_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,6 +86,11 @@ async def init_db():
         details TEXT
     )
     """)
+    
+    # Versioning tables
+    from .script_version_db import init_versioning_tables
+    await init_versioning_tables()
+    
     await db.commit()
 
 async def create_secret(user_id: int, max_bots: int) -> str:
@@ -146,7 +159,7 @@ async def register_user(user_id: int, max_bots: int):
     expires_at = now + (30 * 24 * 3600)
     
     await db.execute(
-        "INSERT OR REPLACE INTO users (id, max_bots, registered_at, expires_at, revoked) VALUES (?, ?, ?, ?, 0)",
+        "INSERT OR REPLACE INTO users (id, max_bots, registered_at, expires_at, revoked, is_vip) VALUES (?, ?, ?, ?, 0, 0)",
         (user_id, max_bots, now, expires_at)
     )
     await db.commit()
@@ -156,7 +169,7 @@ async def get_user(user_id: int):
     """Get user and check if expired."""
     db = await get_db()
     cursor = await db.execute(
-        "SELECT id, max_bots, registered_at, expires_at, revoked FROM users WHERE id = ? AND revoked = 0",
+        "SELECT id, max_bots, registered_at, expires_at, revoked, is_vip FROM users WHERE id = ? AND revoked = 0",
         (user_id,)
     )
     row = await cursor.fetchone()
@@ -170,6 +183,19 @@ async def get_user(user_id: int):
         return None
     
     return row
+
+async def set_vip_status(user_id: int, is_vip: bool):
+    """Set VIP status for a user."""
+    db = await get_db()
+    await db.execute("UPDATE users SET is_vip = ? WHERE id = ?", (1 if is_vip else 0, user_id))
+    await db.commit()
+
+async def get_vip_users():
+    """Get list of all VIP user IDs."""
+    db = await get_db()
+    async with db.execute("SELECT id FROM users WHERE is_vip = 1") as cursor:
+        rows = await cursor.fetchall()
+        return [row[0] for row in rows]
 
 async def delete_expired_users():
     """Automatically revoke expired users."""
@@ -204,7 +230,7 @@ async def revoke_user(user_id: int):
         "UPDATE users SET revoked = 1 WHERE id = ?",
         (user_id,)
     )
-    # New: Delete associated user scripts entries
+    # Delete associated user scripts entries
     await db.execute(
         "DELETE FROM user_scripts WHERE user_id = ?",
         (user_id,)
@@ -342,6 +368,7 @@ async def get_audit_logs(limit: int = 50):
         (limit,)
     )
     return await cursor.fetchall()
+
 async def update_crash_notification_time(user_id: int):
     """Update the last crash notification timestamp for a user."""
     db = await get_db()
@@ -352,6 +379,7 @@ async def update_crash_notification_time(user_id: int):
         (now, user_id)
     )
     await db.commit()
+
 async def update_expiry_notification_time(user_id: int):
     """Update the last expiry warning notification timestamp for a user."""
     db = await get_db()
@@ -362,6 +390,7 @@ async def update_expiry_notification_time(user_id: int):
         (now, user_id)
     )
     await db.commit()
+
 async def get_users_needing_expiry_warning(days_before: int = 5):
     """Get users whose accounts expire soon and haven't been warned recently."""
     db = await get_db()

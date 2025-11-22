@@ -11,11 +11,12 @@ import sys
 
 SCRIPT_METADATA = {
     "name": "music_bot",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "min_manager_version": "1.0.0",
     "author": "Michael",
     "description": "Bot de musique avec gestion intelligente des nœuds Lavalink",
     "changelog": {
+        "1.1.0": "Ajout commandes VIP (setstatus) et Help personnalisé",
         "1.0.0": "Version initiale avec système de fallback intelligent"
     },
     "db_schema_version": 1,
@@ -33,6 +34,26 @@ if not TOKEN:
     print("❌ ERREUR: Aucun token Discord trouvé dans les variables d'environnement.")
     print("   Assurez-vous que le Bot Manager lance ce script correctement.")
     sys.exit(1)
+
+def is_vip(ctx):
+    vip_ids = os.getenv("VIP_IDS", "").split(",")
+    return str(ctx.author.id) in vip_ids or ctx.author.id == ctx.guild.owner_id
+
+class CustomHelpCommand(commands.HelpCommand):
+    async def send_bot_help(self, mapping):
+        embed = discord.Embed(title="🎵 Aide Music Bot", color=discord.Color.blue())
+        for cog, commands in mapping.items():
+            if commands:
+                cog_name = cog.qualified_name if cog else "Commandes"
+                cmd_list = [f"`{c.name}`" for c in commands]
+                embed.add_field(name=cog_name, value=", ".join(cmd_list), inline=False)
+        await self.get_destination().send(embed=embed)
+
+    async def send_command_help(self, command):
+        embed = discord.Embed(title=f"Commande: {command.name}", description=command.help or "Pas de description", color=discord.Color.blue())
+        if command.aliases:
+            embed.add_field(name="Alias", value=", ".join(command.aliases))
+        await self.get_destination().send(embed=embed)
 
 class LavalinkNode:
     def __init__(self, name, uri, password, region="unknown"):
@@ -251,6 +272,19 @@ class MusicCog(commands.Cog, name="Musique"):
         else:
             await ctx.send("Le bot n'est pas connecté.")
 
+    @commands.command(name="setstatus")
+    async def set_status(self, ctx, status_type: str, *, message: str):
+        """[VIP] Changer le statut (playing, watching, listening, streaming)."""
+        if not is_vip(ctx):
+            return await ctx.send("❌ Réservé aux VIPs ou au propriétaire.")
+        
+        try:
+            activity_type = getattr(discord.ActivityType, status_type.lower(), discord.ActivityType.playing)
+            await self.bot.change_presence(activity=discord.Activity(type=activity_type, name=message))
+            await ctx.send(f"✅ Statut mis à jour: **{status_type} {message}**")
+        except AttributeError:
+            await ctx.send("❌ Type de statut invalide. Utilisez: playing, watching, listening, streaming")
+
 class MusicBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -258,6 +292,7 @@ class MusicBot(commands.Bot):
         intents.message_content = True
         super().__init__(command_prefix='&', intents=intents)
         self.node_manager = IntelligentNodeManager()
+        self.help_command = CustomHelpCommand()
 
     async def setup_hook(self) -> None:
         await self.node_manager.find_best_nodes()

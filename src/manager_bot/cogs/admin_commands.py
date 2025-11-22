@@ -147,5 +147,55 @@ class AdminCommands(commands.Cog):
             msg += "\n".join([f"- {script}" for script in allowed])
             await ctx.send(msg, ephemeral=True)
 
+    @app_commands.command(name="add_vip", description="[ADMIN] Donner le statut VIP à un utilisateur")
+    @app_commands.describe(user_id="ID de l'utilisateur")
+    async def add_vip_cmd(self, interaction: discord.Interaction, user_id: str):
+        if not is_admin_check(interaction):
+            await interaction.response.send_message("❌ Réservé aux administrateurs.", ephemeral=True)
+            return
+            
+        try:
+            uid = int(user_id)
+            from ..database import set_vip_status, get_user, log_admin_action
+            
+            user = await get_user(uid)
+            if not user:
+                await interaction.response.send_message(f"❌ Utilisateur {uid} introuvable.", ephemeral=True)
+                return
+                
+            await set_vip_status(uid, True)
+            await log_admin_action(interaction.user.id, "ADD_VIP", uid, "Granted VIP status")
+            await interaction.response.send_message(f"✅ Utilisateur <@{uid}> est maintenant **VIP** ! 🌟", ephemeral=True)
+            
+        except ValueError:
+            await interaction.response.send_message("❌ ID invalide.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Erreur: {e}", ephemeral=True)
+
+    @app_commands.command(name="remove_vip", description="[ADMIN] Retirer le statut VIP d'un utilisateur")
+    @app_commands.describe(user_id="ID de l'utilisateur")
+    async def remove_vip_cmd(self, interaction: discord.Interaction, user_id: str):
+        if not is_admin_check(interaction):
+            await interaction.response.send_message("❌ Réservé aux administrateurs.", ephemeral=True)
+            return
+            
+        try:
+            uid = int(user_id)
+            from ..database import set_vip_status, get_user, log_admin_action
+            
+            user = await get_user(uid)
+            if not user:
+                await interaction.response.send_message(f"❌ Utilisateur {uid} introuvable.", ephemeral=True)
+                return
+                
+            await set_vip_status(uid, False)
+            await log_admin_action(interaction.user.id, "REMOVE_VIP", uid, "Revoked VIP status")
+            await interaction.response.send_message(f"✅ Statut VIP retiré pour <@{uid}>.", ephemeral=True)
+            
+        except ValueError:
+            await interaction.response.send_message("❌ ID invalide.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Erreur: {e}", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(AdminCommands(bot))

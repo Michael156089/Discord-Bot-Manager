@@ -77,6 +77,14 @@ async def start_bot_process(user_id: int, bot_name: str, bot_token: str, script:
     
     user_bot_base_dir, user_bot_scripts_dir, log_file_path, env = _setup_bot_environment(user_id, bot_name, decrypted_token)
     
+    # Inject VIP IDs
+    try:
+        from .database import get_vip_users
+        vip_users = await get_vip_users()
+        env["VIP_IDS"] = ",".join(map(str, vip_users))
+    except Exception as e:
+        print(f"⚠️ Failed to fetch VIP users for {bot_name}: {e}")
+    
     full_script_path = os.path.join(user_bot_scripts_dir, script)
     
     if not os.path.exists(full_script_path):

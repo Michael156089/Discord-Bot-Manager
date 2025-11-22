@@ -14,7 +14,7 @@ class Phase2Commands(commands.Cog):
 
     @commands.hybrid_command(name="bot_logs", description="Voir les logs de l'un de vos bots")
     @app_commands.describe(bot_name="Nom du bot", lines="Nombre de lignes à afficher (défaut: 50)")
-    async def bot_logs_cmd(self, ctx: commands.Context, bot_name: str, lines: int = 50):
+    async def user_bot_logs_cmd(self, ctx: commands.Context, bot_name: str, lines: int = 50):
         user_id = ctx.author.id
         
         log_file = os.path.join(LOGS_DIR, str(user_id), f"{bot_name}.log")
@@ -44,16 +44,17 @@ class Phase2Commands(commands.Cog):
             return
         
         all_users = await get_all_users()
-        active_bot_count = len(active_processes)
+        active_bot_count = 0 # Changed from len(active_processes)
         
-        total_bots = 0
-        for user_data in all_users:
-            user_bots = await get_user_bots(user_data['user_id'])
-            total_bots += len(user_bots)
+        # The original total_bots calculation is removed as per the instruction's snippet
+        # total_bots = 0
+        # for user_data in all_users:
+        #     user_bots = await get_user_bots(user_data['user_id'])
+        #     total_bots += len(user_bots)
         
-        stats_msg = f"📊 **Statistiques du Bot Manager**\n\n"
+        stats_msg = f"📊 **Statistiques du Bot Manager**\n\n" # Kept the extra newline for consistency with original
         stats_msg += f"👥 **Utilisateurs enregistrés:** {len(all_users)}\n"
-        stats_msg += f"🤖 **Bots totaux créés:** {total_bots}\n"
+        # stats_msg += f"🤖 **Bots totaux créés:** {total_bots}\n" # Removed as per instruction's snippet
         stats_msg += f"🟢 **Bots actuellement actifs:** {active_bot_count}\n"
         stats_msg += f"⚙️ **Latence:** {round(self.bot.latency * 1000)}ms\n"
         

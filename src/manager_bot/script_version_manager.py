@@ -3,6 +3,7 @@ import json
 import hashlib
 import shutil
 import re
+import ast
 from pathlib import Path
 from typing import Dict, Optional, Tuple, List
 from .script_version_db import (
@@ -20,20 +21,21 @@ def parse_script_metadata(script_path: str) -> Optional[Dict]:
         with open(script_path, 'r', encoding='utf-8') as f:
             content = f.read()
         
-        metadata_pattern = r'SCRIPT_METADATA\s*=\s*({[^}]+})'
-        match = re.search(metadata_pattern, content, re.DOTALL)
-        
-        if not match:
+        try:
+            tree = ast.parse(content)
+            for node in tree.body:
+                if isinstance(node, ast.Assign):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name) and target.id == 'SCRIPT_METADATA':
+                            if isinstance(node.value, ast.Dict):
+                                return ast.literal_eval(node.value)
             return None
-        
-        metadata_str = match.group(1)
-        metadata_str = re.sub(r'#.*', '', metadata_str)
-        metadata_str = re.sub(r"'", '"', metadata_str)
-        
-        metadata = json.loads(metadata_str)
-        return metadata
+        except Exception as e:
+            print(f"Error parsing AST in {script_path}: {e}")
+            return None
+            
     except Exception as e:
-        print(f"Error parsing metadata from {script_path}: {e}")
+        print(f"Error reading file {script_path}: {e}")
         return None
 
 def calculate_file_hash(file_path: str) -> str:

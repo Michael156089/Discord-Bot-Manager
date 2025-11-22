@@ -204,5 +204,18 @@ class ScriptManagement(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"Erreur lors de la mise à jour: {str(e)}")
 
+    @app_commands.command(name="admin_scan_scripts", description="[ADMIN] Forcer le scan des scripts")
+    async def admin_scan_scripts(self, interaction: discord.Interaction):
+        from ..utils import is_admin_check
+        if not is_admin_check(interaction):
+            return await interaction.response.send_message("Réservé aux admins.", ephemeral=True)
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        from ..script_version_manager import scan_and_register_scripts
+        await scan_and_register_scripts()
+        
+        await interaction.followup.send("Scan terminé. Vérifiez les logs console pour les détails.")
+
 async def setup(bot):
     await bot.add_cog(ScriptManagement(bot))

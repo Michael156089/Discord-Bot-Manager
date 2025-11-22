@@ -28,6 +28,8 @@ LOGS_DIR = os.path.join(BASE_DIR, "logs")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 SCRIPTS_ADMIN_DIR = os.path.join(BASE_DIR, "admin_scripts")
 DB_PATH = os.path.join(DATA_DIR, "bot_manager.db")
+ADMIN_SCRIPTS_DIR = SCRIPTS_ADMIN_DIR  
+USER_SCRIPTS_DIR = os.path.join(BASE_DIR, "user_scripts")
 
 for directory in [USERS_DIR, LOGS_DIR, DATA_DIR, SCRIPTS_ADMIN_DIR]:
     os.makedirs(directory, exist_ok=True)

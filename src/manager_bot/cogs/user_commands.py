@@ -469,12 +469,207 @@ class UserCommands(commands.Cog):
             else:
                 status_text = status.upper()
             lines.append(f"`{bot_name}` - Script: {bot_data[4]} - Statut: {status_text}")
+        now = time.time()
+        last = _start_cooldowns[user_id]
+        if now - last < _START_COOLDOWN_SECONDS:
+            await ctx.send(f"Vous devez attendre {int(_START_COOLDOWN_SECONDS - (now - last))}s avant de démarrer/redémarrer un bot {fail_emoji}.", ephemeral=True)
+            return
+        _start_cooldowns[user_id] = now
+
+        bot_data = await get_bot(user_id, nom)
+        if not bot_data:
+            await ctx.send(f"Bot non trouvé ou non autorisé {fail_emoji}.", ephemeral=True)
+            return
+        
+        current_status = get_bot_status(user_id, nom)
+        if current_status == "running":
+            await ctx.send(f"Le bot `{nom}` est déjà en cours d'exécution.", ephemeral=True)
+            return
+        if current_status == "starting":
+            await ctx.send(f"Le bot `{nom}` est déjà en cours de démarrage. Veuillez patienter.", ephemeral=True)
+            return
+
+        # Vérification et restauration automatique du script
+        script_name = bot_data[4]
+        if not await self._ensure_script_exists(user_id, script_name):
+            await ctx.send(f"❌ Impossible de démarrer le bot : le script `{script_name}` est introuvable et vous n'y avez plus accès (abonnement expiré ou script retiré).", ephemeral=True)
+            return
+
+        await ctx.defer(ephemeral=True)
+
+        try:
+            if await start_bot_process(user_id, nom, bot_data[3], bot_data[4]):
+                await ctx.edit_original_response(content=f"Bot `{nom}` démarré. En attente de sa connexion à Discord...") 
+            else:
+                await ctx.edit_original_response(content=f"Impossible de démarrer le bot `{nom}`. Vérifiez les logs pour plus de détails: `logs/{user_id}/{nom}.log`")
+        except Exception as e:
+            await ctx.edit_original_response(content=f"Erreur inattendue : `{e}`. Consultez `logs/{user_id}/{nom}.log`.") 
+
+    @commands.hybrid_command(name="stop_bot", description="Arrêter un de vos bots")
+    @app_commands.describe(nom="Nom du bot")
+    async def stop_bot_cmd(self, ctx: commands.Context, nom: str):
+        user_id = ctx.author.id
+
+        user_data = await get_user_cached(user_id)
+        if not user_data:
+            await ctx.send("Vous n'êtes pas enregistré. Utilisez `/register`.", ephemeral=True)
+            return
+
+        bot_data = await get_bot(user_id, nom)
+        if not bot_data:
+            await ctx.send("Bot non trouvé ou non autorisé.", ephemeral=True)
+            return
+        
+        current_status = get_bot_status(user_id, nom)
+        if current_status == "stopped":
+            await ctx.send(f"Le bot `{nom}` est déjà arrêté.", ephemeral=True)
+            return
+
+        await ctx.defer(ephemeral=True) 
+
+        if stop_bot_process(user_id, nom):
+            await update_bot_status(user_id, nom, "stopped")
+            await ctx.edit_original_response(content=f"Bot `{nom}` arrêté.") 
+        else:
+            await ctx.edit_original_response(content=f"Impossible d'arrêter le bot `{nom}`.") 
+
+    @commands.hybrid_command(name="restart_bot", description="Redémarrer un de vos bots")
+    @app_commands.describe(nom="Nom du bot")
+    async def restart_bot_cmd(self, ctx: commands.Context, nom: str):
+        user_id = ctx.author.id
+
+        user_data = await get_user_cached(user_id)
+        if not user_data:
+            await ctx.send(f"Vous n'êtes pas enregistré. Utilisez `/register`. {fail_emoji}", ephemeral=True)
+            return
+
+        if not is_valid_bot_name(nom):
+            await ctx.send(f"Nom de bot invalide {fail_emoji}.", ephemeral=True)
+            return
+
+        now = time.time()
+        last = _start_cooldowns[user_id]
+        if now - last < _START_COOLDOWN_SECONDS:
+            await ctx.send(f"Vous devez attendre {int(_START_COOLDOWN_SECONDS - (now - last))}s avant de démarrer/redémarrer un bot.", ephemeral=True)
+            return
+        _start_cooldowns[user_id] = now
+
+        bot_data = await get_bot(user_id, nom)
+        if not bot_data:
+            await ctx.send(f"Bot non trouvé ou non autorisé. {fail_emoji}", ephemeral=True)
+            return
+            
+        # Vérification et restauration automatique du script
+        script_name = bot_data[4]
+        if not await self._ensure_script_exists(user_id, script_name):
+            await ctx.send(f"❌ Impossible de redémarrer le bot : le script `{script_name}` est introuvable et vous n'y avez plus accès.", ephemeral=True)
+            return
+
+        await ctx.defer(ephemeral=True)
+        stop_bot_process(user_id, nom)
+        await asyncio.sleep(1) 
+
+        try:
+            if await start_bot_process(user_id, nom, bot_data[3], bot_data[4]):
+                await ctx.edit_original_response(content=f"Bot `{nom}` redémarré. En attente de sa connexion à Discord...") 
+            else:
+                await ctx.edit_original_response(content=f"Impossible de redémarrer le bot `{nom}` {fail_emoji}")
+        except Exception as e:
+            await ctx.edit_original_response(content=f"Erreur inattendue lors du redémarrage : `{e}`.") 
+
+    @commands.hybrid_command(name="update_token", description="Mettre à jour le token d'un de vos bots")
+    @app_commands.describe(nom="Nom du bot", new_token="Nouveau token")
+    async def update_token_cmd(self, ctx: commands.Context, nom: str, new_token: str):
+        user_id = ctx.author.id
+
+        user_data = await get_user_cached(user_id)
+        if not user_data:
+            await ctx.send(f"Vous n'êtes pas enregistré. Utilisez `/register` {fail_emoji}.", ephemeral=True)
+            return
+
+        bot_data = await get_bot(user_id, nom)
+        if not bot_data:
+            is_valid, error_msg = validate_discord_token(new_token)
+            if not is_valid:
+                await ctx.send(f"Token invalide: {error_msg} {fail_emoji}", ephemeral=True)
+                return  
+            await ctx.send(f"Bot non trouvé ou non autorisé {fail_emoji}.", ephemeral=True)
+            return
+
+        was_running = False
+        current_status = get_bot_status(user_id, nom)
+        if current_status in ["running", "starting"]:
+            stop_bot_process(user_id, nom)
+            was_running = True
+            await asyncio.sleep(1)
+
+        encrypted_token = encrypt_token(new_token)
+        await update_bot_token(user_id, nom, encrypted_token)
+
+        if was_running:
+            try:
+                if await start_bot_process(user_id, nom, encrypted_token, bot_data[4]):
+                    await ctx.send(f"Token mis à jour et bot redémarré. En attente de sa connexion à Discord...", ephemeral=True)
+                else:
+                    await ctx.send(f"Token mis à jour, mais impossible de redémarrer le bot `{nom}` contactez lequipe de support si le probleme persiste.", ephemeral=True)
+            except Exception as e:
+                await ctx.send(f"Token mis à jour, mais erreur inattendue au redémarrage: {e}", ephemeral=True)
+        else:
+            await ctx.send(f"Token du bot `{nom}` mis à jour. {check_mark}", ephemeral=True)
+
+    @commands.hybrid_command(name="delete_bot", description="Supprimer un de vos bots")
+    @app_commands.describe(nom="Nom du bot")
+    async def delete_bot_cmd(self, ctx: commands.Context, nom: str):
+        user_id = ctx.author.id
+
+        user_data = await get_user_cached(user_id)
+        if not user_data:
+            await ctx.send(f"Vous n'êtes pas enregistré. Utilisez `/register` {fail_emoji}.", ephemeral=True)
+            return
+
+        bot_data = await get_bot(user_id, nom)
+        if not bot_data:
+            await ctx.send(f"Bot non trouvé ou non autorisé {fail_emoji}.", ephemeral=True)
+            return
+
+        if get_bot_status(user_id, nom) == "running":
+            stop_bot_process(user_id, nom)
+        
+        await delete_bot(user_id, nom)
+        await ctx.send(f"Bot `{nom}` supprimé. {check_mark}", ephemeral=True)
+
+    @commands.hybrid_command(name="my_bots", description="Lister vos bots")
+    async def my_bots_cmd(self, ctx: commands.Context):
+        user_id = ctx.author.id
+
+        user_data = await get_user_cached(user_id)
+        if not user_data:
+            await ctx.send(f"Vous n'êtes pas enregistré. Utilisez `/register`. {fail_emoji}", ephemeral=True)
+            return
+
+        user_bots = await get_user_bots(user_id)
+        if not user_bots:
+            await ctx.send(f"Vous n'avez aucun bot enregistré. Utilisez `/add_bot`. {fail_emoji}", ephemeral=True)
+            return
+
+        lines = ["Vos bots:"]
+        for bot_data in user_bots:
+            bot_name = bot_data[2]
+            status = get_bot_status(user_id, bot_name)
+            
+            if status == "starting":
+                status_text = "DEMARRAGE..."
+            elif status == "crashed":
+                status_text = "CRASHÉ"
+            else:
+                status_text = status.upper()
+            lines.append(f"`{bot_name}` - Script: {bot_data[4]} - Statut: {status_text}")
         
         await ctx.send("\n".join(lines), ephemeral=True)
 
     @commands.hybrid_command(name="bot_info", description="Infos sur un de vos bots")
     @app_commands.describe(nom="Nom du bot")
-    async def bot_info_cmd(self, ctx: commands.Context, nom: str):
+    async def user_bot_info_cmd(self, ctx: commands.Context, nom: str):
         user_id = ctx.author.id
 
         if not is_valid_bot_name(nom):
@@ -492,12 +687,12 @@ class UserCommands(commands.Cog):
             f"Infos sur `{nom}`:\n"
             f"Script: {bot_data[4]}\n"
             f"Statut: {current_status}\n"
-            f"Token: (sécurisé). Utilisez `/update_token` pour le changer.\n",
+            f"Token: ||{bot_data[2][:10]}...||\n",
             ephemeral=True
         )
 
     @commands.hybrid_command(name="my_scripts", description="Voir les scripts disponibles pour vous")
-    async def my_scripts_cmd(self, ctx: commands.Context):
+    async def user_my_scripts_cmd(self, ctx: commands.Context):
         user_id = ctx.author.id
         
         user_data = await get_user_cached(user_id)
@@ -506,8 +701,7 @@ class UserCommands(commands.Cog):
             return
         
         available_scripts = await self.get_available_scripts_for_user(user_id)
-        
-        msg = "**Scripts disponibles:**\n"
+        msg = "📜 **Vos scripts disponibles :**\n"
         for s in available_scripts:
             msg += f"- {s['display']}\n"
             
