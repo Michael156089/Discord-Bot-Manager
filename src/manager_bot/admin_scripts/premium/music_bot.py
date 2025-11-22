@@ -9,6 +9,22 @@ import logging
 import json
 import sys
 
+SCRIPT_METADATA = {
+    "name": "music_bot",
+    "version": "1.0.0",
+    "min_manager_version": "1.0.0",
+    "author": "Michael",
+    "description": "Bot de musique avec gestion intelligente des nœuds Lavalink",
+    "changelog": {
+        "1.0.0": "Version initiale avec système de fallback intelligent"
+    },
+    "db_schema_version": 1,
+    "dependencies": ["discord.py>=2.3.0", "wavelink>=3.0.0", "aiohttp>=3.9.0"],
+    "deprecated": False,
+    "deprecation_message": None
+}
+
+
 # --- Configuration ---
 # Le token est injecté par le Bot Manager via la variable d'environnement DISCORD_TOKEN
 TOKEN = os.getenv("DISCORD_TOKEN")

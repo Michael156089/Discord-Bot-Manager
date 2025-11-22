@@ -1,3 +1,4 @@
+
 import discord
 from discord.ext import commands
 import asyncio
@@ -8,6 +9,7 @@ from .database import init_db, delete_expired_secrets, delete_expired_users
 from .bot_process import monitor_processes, active_processes
 from .resource_monitor import monitor_bot_resources
 from .utils import cleanup_expired_cooldowns, cleanup_expired_cache
+from .script_version_db import init_versioning_tables
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -24,7 +26,8 @@ class ManagerBot(commands.Bot):
             "src.manager_bot.cogs.general_commands",
             "src.manager_bot.cogs.phase2_commands",
             "src.manager_bot.cogs.tasks",
-            "src.manager_bot.cogs.help_command"
+            "src.manager_bot.cogs.help_command",
+            "src.manager_bot.cogs.script_management"
         ]
         
         for ext in extensions:
@@ -35,6 +38,7 @@ class ManagerBot(commands.Bot):
                 print(f"Erreur chargement extension {ext}: {e}")
         
         await init_db()
+        await init_versioning_tables()  
         print("Base de données initialisée.")
         
         self.loop.create_task(monitor_processes(self))

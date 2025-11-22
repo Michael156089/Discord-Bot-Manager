@@ -9,6 +9,24 @@ from datetime import datetime, timedelta, timezone
 import logging
 import random
 
+SCRIPT_METADATA = {
+    "name": "advanced_moderation_bot",
+    "version": "2.1.0",
+    "min_manager_version": "1.0.0",
+    "author": "Michael",
+    "description": "Bot de modération avancée avec anti-liens, leash, mass ban, et système de permissions",
+    "changelog": {
+        "2.1.0": "Ajout anti-liens, leash, mass ban, addrole/delrole, banner, setstatus",
+        "2.0.0": "Refonte complète avec DB locale SQLite",
+        "1.0.0": "Version initiale"
+    },
+    "db_schema_version": 3,
+    "dependencies": ["discord.py>=2.3.0"],
+    "deprecated": False,
+    "deprecation_message": None
+}
+
+
 # --- Configuration ---
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
@@ -622,6 +640,40 @@ class Admin(commands.Cog):
         
         embed = discord.Embed(title="Permissions des Rôles", description=desc, color=discord.Color.blue())
         await ctx.send(embed=embed)
+
+    @commands.command(name='setstatus')
+    @check_permission_level(9)
+    async def set_status(self, ctx, status: str, activity_type: str = "playing", *, activity_text: str = None):
+        status_map = {
+            'online': discord.Status.online,
+            'idle': discord.Status.idle,
+            'dnd': discord.Status.dnd,
+            'invisible': discord.Status.invisible
+        }
+        
+        activity_map = {
+            'playing': discord.ActivityType.playing,
+            'watching': discord.ActivityType.watching,
+            'listening': discord.ActivityType.listening,
+            'streaming': discord.ActivityType.streaming,
+            'competing': discord.ActivityType.competing
+        }
+        
+        if status.lower() not in status_map:
+            return await ctx.send(f"Statut invalide. Choix : {', '.join(status_map.keys())}")
+        
+        if activity_type.lower() not in activity_map:
+            return await ctx.send(f"Type d'activité invalide. Choix : {', '.join(activity_map.keys())}")
+        
+        new_status = status_map[status.lower()]
+        
+        if activity_text:
+            activity = discord.Activity(type=activity_map[activity_type.lower()], name=activity_text)
+            await self.bot.change_presence(status=new_status, activity=activity)
+            await ctx.send(f"Statut changé : {status} - {activity_type} {activity_text}")
+        else:
+            await self.bot.change_presence(status=new_status)
+            await ctx.send(f"Statut changé : {status}")
 
 class General(commands.Cog):
     def __init__(self, bot):
