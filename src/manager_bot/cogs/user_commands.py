@@ -318,15 +318,15 @@ class UserCommands(commands.Cog):
             await ctx.send(f"❌ Impossible de démarrer le bot : le script `{script_name}` est introuvable et vous n'y avez plus accès (abonnement expiré ou script retiré).", ephemeral=True)
             return
 
-        await ctx.defer(ephemeral=True)
+        await ctx.defer()
 
         try:
             if await start_bot_process(user_id, nom, bot_data[3], bot_data[4]):
-                await ctx.send(f"Bot `{nom}` démarré. En attente de sa connexion à Discord...", ephemeral=True)
+                await ctx.send(f"Bot `{nom}` démarré avec succès {check_mark}")
             else:
-                await ctx.send(f"Impossible de démarrer le bot `{nom}`. Vérifiez les logs pour plus de détails: `logs/{user_id}/{nom}.log`", ephemeral=True)
+                await ctx.send(f"Impossible de démarrer le bot `{nom}` {fail_emoji}. Vérifiez les logs: `logs/{user_id}/{nom}.log`")
         except Exception as e:
-            await ctx.send(f"Erreur inattendue : `{e}`. Consultez `logs/{user_id}/{nom}.log`.", ephemeral=True) 
+            await ctx.send(f"Erreur inattendue : `{e}` {fail_emoji}. Consultez `logs/{user_id}/{nom}.log`.") 
 
     @commands.hybrid_command(name="stop_bot", description="Arrêter un de vos bots")
     @app_commands.describe(nom="Nom du bot")
@@ -348,13 +348,13 @@ class UserCommands(commands.Cog):
             await ctx.send(f"Le bot `{nom}` est déjà arrêté.", ephemeral=True)
             return
 
-        await ctx.defer(ephemeral=True) 
+        await ctx.defer() 
 
         if stop_bot_process(user_id, nom):
             await update_bot_status(user_id, nom, "stopped")
-            await ctx.send(f"Bot `{nom}` arrêté.", ephemeral=True)
+            await ctx.send(f"Bot `{nom}` arrêté {check_mark}")
         else:
-            await ctx.send(f"Impossible d'arrêter le bot `{nom}`.", ephemeral=True)
+            await ctx.send(f"Impossible d'arrêter le bot `{nom}` {fail_emoji}")
 
     @commands.hybrid_command(name="restart_bot", description="Redémarrer un de vos bots")
     @app_commands.describe(nom="Nom du bot")
@@ -388,17 +388,17 @@ class UserCommands(commands.Cog):
             await ctx.send(f"❌ Impossible de redémarrer le bot : le script `{script_name}` est introuvable et vous n'y avez plus accès.", ephemeral=True)
             return
 
-        await ctx.defer(ephemeral=True)
+        await ctx.defer()
         stop_bot_process(user_id, nom)
         await asyncio.sleep(1) 
 
         try:
             if await start_bot_process(user_id, nom, bot_data[3], bot_data[4]):
-                await ctx.send(f"Bot `{nom}` redémarré. En attente de sa connexion à Discord...", ephemeral=True)
+                await ctx.send(f"Bot `{nom}` redémarré avec succès {check_mark}")
             else:
-                await ctx.send(f"Impossible de redémarrer le bot `{nom}` {fail_emoji}", ephemeral=True)
+                await ctx.send(f"Impossible de redémarrer le bot `{nom}` {fail_emoji}")
         except Exception as e:
-            await ctx.send(f"Erreur inattendue lors du redémarrage : `{e}`.", ephemeral=True)
+            await ctx.send(f"Erreur inattendue lors du redémarrage : `{e}` {fail_emoji}")
 
     @commands.hybrid_command(name="update_token", description="Mettre à jour le token d'un de vos bots")
     @app_commands.describe(nom="Nom du bot", new_token="Nouveau token")
