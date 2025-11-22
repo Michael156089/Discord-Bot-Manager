@@ -11,16 +11,17 @@ import random
 
 SCRIPT_METADATA = {
     "name": "advanced_moderation_bot",
-    "version": "2.1.0",
+    "version": "2.2.0",
     "min_manager_version": "1.0.0",
     "author": "Michael",
     "description": "Bot de modération avancée avec anti-liens, leash, mass ban, et système de permissions",
     "changelog": {
+        "2.2.0": "Ajout système Vanity Role (statut personnalisé)",
         "2.1.0": "Ajout anti-liens, leash, mass ban, addrole/delrole, banner, setstatus",
         "2.0.0": "Refonte complète avec DB locale SQLite",
         "1.0.0": "Version initiale"
     },
-    "db_schema_version": 3,
+    "db_schema_version": 4,
     "dependencies": ["discord.py>=2.3.0"],
     "deprecated": False,
     "deprecation_message": None
@@ -139,6 +140,17 @@ class LocalDatabase:
                     guild_id TEXT PRIMARY KEY,
                     enabled INTEGER DEFAULT 0,
                     whitelisted_roles TEXT DEFAULT ''
+                )
+            ''')
+
+            # Vanity Role Configuration
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS vanity_config (
+                    guild_id TEXT PRIMARY KEY,
+                    vanity_url TEXT,
+                    role_id TEXT,
+                    log_channel_id TEXT,
+                    enabled INTEGER DEFAULT 0
                 )
             ''')
             conn.commit()
@@ -330,6 +342,29 @@ class LocalDatabase:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('UPDATE antilink_config SET whitelisted_roles = ? WHERE guild_id = ?', (','.join(roles), str(guild_id)))
+            conn.commit()
+
+    # --- Vanity Role ---
+    def get_vanity_config(self, guild_id):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT vanity_url, role_id, log_channel_id, enabled FROM vanity_config WHERE guild_id = ?', (str(guild_id),))
+            res = cursor.fetchone()
+            if res:
+                return {'vanity_url': res[0], 'role_id': res[1], 'log_channel_id': res[2], 'enabled': bool(res[3])}
+            return None
+
+    def set_vanity_config(self, guild_id, vanity_url, role_id, log_channel_id, enabled=True):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('INSERT OR REPLACE INTO vanity_config (guild_id, vanity_url, role_id, log_channel_id, enabled) VALUES (?, ?, ?, ?, ?)', 
+                         (str(guild_id), vanity_url, str(role_id), str(log_channel_id), 1 if enabled else 0))
+            conn.commit()
+    
+    def set_vanity_enabled(self, guild_id, enabled):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('UPDATE vanity_config SET enabled = ? WHERE guild_id = ?', (1 if enabled else 0, str(guild_id)))
             conn.commit()
 
 db = LocalDatabase(DB_FILE)
@@ -1127,6 +1162,156 @@ class Moderation(commands.Cog):
             except discord.Forbidden:
                 pass
 
+class VanityRole(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.ready = False
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        if self.ready:
+            return
+        self.ready = True
+        await asyncio.sleep(5) # Wait for cache
+        await self.scan_all_guilds()
+
+    async def scan_all_guilds(self):
+        for guild in self.bot.guilds:
+            await self.scan_guild(guild)
+
+    async def scan_guild(self, guild):
+        config = db.get_vanity_config(guild.id)
+        if not config or not config['enabled']:
+            return
+
+        role = guild.get_role(int(config['role_id']))
+        if not role:
+            return
+
+        for member in guild.members:
+            if member.bot: continue
+            await self.check_member(member, config, role)
+
+    async def check_member(self, member, config=None, role=None):
+        if member.bot: return
+        
+        if not config:
+            config = db.get_vanity_config(member.guild.id)
+            if not config or not config['enabled']: return
+            
+        if not role:
+            role = member.guild.get_role(int(config['role_id']))
+            if not role: return
+
+        vanity_url = config['vanity_url'].lower()
+        has_url = False
+        
+        if member.activities:
+            for activity in member.activities:
+                if isinstance(activity, discord.CustomActivity) and activity.name:
+                    if vanity_url in activity.name.lower():
+                        has_url = True
+                        break
+        
+        has_role = role in member.roles
+        
+        log_channel = None
+        if config['log_channel_id']:
+            log_channel = member.guild.get_channel(int(config['log_channel_id']))
+
+        # Case 1: Has URL but not role -> Add role
+        if has_url and not has_role:
+            try:
+                await member.add_roles(role, reason=f"Vanity URL: {vanity_url}")
+                if log_channel:
+                    embed = discord.Embed(title="Vanity Role Ajouté", color=discord.Color.green(), timestamp=datetime.now())
+                    embed.description = f"{member.mention} a ajouté **{vanity_url}** dans son statut.\nRôle {role.mention} ajouté."
+                    embed.set_thumbnail(url=member.display_avatar.url)
+                    await log_channel.send(embed=embed)
+            except discord.Forbidden:
+                pass
+
+        # Case 2: Doesn't have URL but has role -> Remove role
+        elif not has_url and has_role:
+            try:
+                await member.remove_roles(role, reason=f"Vanity URL retirée")
+                if log_channel:
+                    embed = discord.Embed(title="Vanity Role Retiré", color=discord.Color.red(), timestamp=datetime.now())
+                    embed.description = f"{member.mention} a retiré **{vanity_url}** de son statut.\nRôle {role.mention} retiré."
+                    embed.set_thumbnail(url=member.display_avatar.url)
+                    await log_channel.send(embed=embed)
+            except discord.Forbidden:
+                pass
+
+    @commands.Cog.listener()
+    async def on_member_update(self, before, after):
+        if not self.ready: return
+        # Check if activities changed
+        if before.activities != after.activities:
+            await self.check_member(after)
+
+    @commands.Cog.listener()
+    async def on_presence_update(self, before, after):
+        if not self.ready: return
+        if before.activities != after.activities:
+            await self.check_member(after)
+
+    @commands.command(name="setvanity")
+    @check_permission_level(9)
+    async def set_vanity(self, ctx, vanity_url: str, role: discord.Role, channel: discord.TextChannel = None):
+        """Configure le système de Vanity Role."""
+        log_channel_id = channel.id if channel else None
+        db.set_vanity_config(ctx.guild.id, vanity_url, role.id, log_channel_id, enabled=True)
+        
+        msg = f"✅ Configuration Vanity enregistrée !\n**URL:** `{vanity_url}`\n**Rôle:** {role.mention}"
+        if channel:
+            msg += f"\n**Logs:** {channel.mention}"
+        
+        await ctx.send(msg)
+        # Trigger a scan
+        await ctx.send("🔄 Scan des membres en cours...")
+        await self.scan_guild(ctx.guild)
+        await ctx.send("✅ Scan terminé.")
+
+    @commands.command(name="vanityoff")
+    @check_permission_level(9)
+    async def vanity_off(self, ctx):
+        """Désactive le système de Vanity Role."""
+        db.set_vanity_enabled(ctx.guild.id, False)
+        await ctx.send("❌ Système Vanity Role désactivé.")
+
+    @commands.command(name="vanityscan")
+    @check_permission_level(8)
+    async def vanity_scan(self, ctx):
+        """Force un scan des statuts."""
+        await ctx.send("🔄 Scan en cours...")
+        await self.scan_guild(ctx.guild)
+        await ctx.send("✅ Scan terminé.")
+
+    @commands.command(name="vanityinfo")
+    @check_permission_level(8)
+    async def vanity_info(self, ctx):
+        """Affiche la configuration Vanity."""
+        config = db.get_vanity_config(ctx.guild.id)
+        if not config:
+            return await ctx.send("Aucune configuration Vanity trouvée.")
+        
+        role = ctx.guild.get_role(int(config['role_id']))
+        role_name = role.name if role else "Inconnu"
+        
+        log_channel = ctx.guild.get_channel(int(config['log_channel_id'])) if config['log_channel_id'] else None
+        log_name = log_channel.mention if log_channel else "Aucun"
+        
+        status = "Activé" if config['enabled'] else "Désactivé"
+        
+        embed = discord.Embed(title="Configuration Vanity", color=discord.Color.purple())
+        embed.add_field(name="Statut", value=status, inline=False)
+        embed.add_field(name="URL", value=f"`{config['vanity_url']}`", inline=False)
+        embed.add_field(name="Rôle", value=role_name, inline=False)
+        embed.add_field(name="Logs", value=log_name, inline=False)
+        
+        await ctx.send(embed=embed)
+
 class CustomHelpCommand(commands.HelpCommand):
     def __init__(self):
         super().__init__(command_attrs={
@@ -1168,6 +1353,7 @@ class AdvancedBot(commands.Bot):
         await self.add_cog(Admin(self))
         await self.add_cog(General(self))
         await self.add_cog(Moderation(self))
+        await self.add_cog(VanityRole(self))
 
     async def on_ready(self):
         print(f"Advanced Bot connecté: {self.user}")

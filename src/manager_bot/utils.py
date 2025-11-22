@@ -64,8 +64,10 @@ async def cleanup_expired_cache():
     for key in expired_bots:
         del _bot_cache[key]
 
-def is_admin_check(ctx: commands.Context) -> bool:
-    return ctx.author.id in ADMIN_IDS
+def is_admin_check(ctx_or_interaction) -> bool:
+    if isinstance(ctx_or_interaction, discord.Interaction):
+        return ctx_or_interaction.user.id in ADMIN_IDS
+    return ctx_or_interaction.author.id in ADMIN_IDS
 
 def is_registered_check(interaction: discord.Interaction) -> bool:
     return os.path.exists(os.path.join(USERS_DIR, str(interaction.user.id)))

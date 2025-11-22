@@ -56,7 +56,11 @@ class AdminCommands(commands.Cog):
 
         user_list_lines = []
         for user_data in users:
-            user_id, max_bots, registered_at_ts, expires_at_ts, revoked = user_data
+            user_id = user_data['id']
+            max_bots = user_data['max_bots']
+            registered_at_ts = user_data['registered_at']
+            expires_at_ts = user_data['expires_at']
+            revoked = user_data['revoked']
             
             registered_date = datetime.fromtimestamp(registered_at_ts).strftime('%Y-%m-%d %H:%M:%S')
             expires_date = datetime.fromtimestamp(expires_at_ts).strftime('%Y-%m-%d %H:%M:%S')

@@ -3,11 +3,12 @@
 
 SCRIPT_METADATA = {
     "name": "welcome_bot_advanced",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "min_manager_version": "1.0.0",
     "author": "Bot Manager (Ported)",
     "description": "Système avancé de bienvenue/au revoir avec messages personnalisables et base de données",
     "changelog": {
+        "1.1.1": "Suppression des emojis",
         "1.1.0": "Ajout commandes VIP (setstatus) et Help personnalisé",
         "1.0.0": "Initial port from JS to Python"
     },
@@ -27,7 +28,7 @@ def is_vip(ctx):
 
 class CustomHelpCommand(commands.HelpCommand):
     async def send_bot_help(self, mapping):
-        embed = discord.Embed(title="👋 Aide Welcome Bot Advanced", color=discord.Color.blue())
+        embed = discord.Embed(title="Aide Welcome Bot Advanced", color=discord.Color.blue())
         for cog, commands in mapping.items():
             if commands:
                 cog_name = cog.qualified_name if cog else "Commandes"
@@ -107,7 +108,7 @@ class WelcomeBotAdvanced(commands.Cog):
         self.bot = bot
         self.db = LocalDatabase()
         self.default_join_msg = "Welcome {member:mention}! We now have {server:members} member!"
-        self.default_leave_msg = "😢 {member:name} just left the server... We are down to {server:members} members... "
+        self.default_leave_msg = "{member:name} just left the server... We are down to {server:members} members... "
 
     def format_message(self, msg, member, guild):
         return msg.replace("{member:mention}", member.mention)\
@@ -120,7 +121,7 @@ class WelcomeBotAdvanced(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print(f"👋 Welcome Bot Advanced '{self.bot.user}' connecté!")
+        print(f"Welcome Bot Advanced '{self.bot.user}' connecté!")
         await self.bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="new members"))
         print("[BOT_MANAGER_SIGNAL] CONNEXION_REUSSIE")
 
@@ -197,12 +198,12 @@ class WelcomeBotAdvanced(commands.Cog):
         """Simule un événement (join/leave)."""
         if event.lower() == "join":
             await self.on_member_join(ctx.author)
-            await ctx.send("✅ Événement 'join' simulé.")
+            await ctx.send("Événement 'join' simulé.")
         elif event.lower() == "leave":
             await self.on_member_remove(ctx.author)
-            await ctx.send("✅ Événement 'leave' simulé.")
+            await ctx.send("Événement 'leave' simulé.")
         else:
-            await ctx.send("❌ Événement inconnu. Utilisez `join` ou `leave`.")
+            await ctx.send("Événement inconnu. Utilisez `join` ou `leave`.")
 
     @commands.command(name="cleardata")
     @commands.has_permissions(administrator=True)
@@ -221,9 +222,9 @@ class WelcomeBotAdvanced(commands.Cog):
         try:
             activity_type = getattr(discord.ActivityType, status_type.lower(), discord.ActivityType.playing)
             await self.bot.change_presence(activity=discord.Activity(type=activity_type, name=message))
-            await ctx.send(f"✅ Statut mis à jour: **{status_type} {message}**")
+            await ctx.send(f"Statut mis à jour: **{status_type} {message}**")
         except AttributeError:
-            await ctx.send("❌ Type de statut invalide. Utilisez: playing, watching, listening, streaming")
+            await ctx.send("Type de statut invalide. Utilisez: playing, watching, listening, streaming")
 
 class ClearDataView(discord.ui.View):
     def __init__(self, db, guild_id, author_id):
@@ -238,30 +239,30 @@ class ClearDataView(discord.ui.View):
             return False
         return True
 
-    @discord.ui.button(label="Welcome Channel", style=discord.ButtonStyle.danger, emoji="🔴")
+    @discord.ui.button(label="Welcome Channel", style=discord.ButtonStyle.danger)
     async def clear_welcome_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.db.clear_data(self.guild_id, "welcome_channel")
-        await interaction.response.send_message("✅ Welcome Channel effacé.", ephemeral=True)
+        await interaction.response.send_message("Welcome Channel effacé.", ephemeral=True)
 
-    @discord.ui.button(label="Leave Channel", style=discord.ButtonStyle.danger, emoji="🟠")
+    @discord.ui.button(label="Leave Channel", style=discord.ButtonStyle.danger)
     async def clear_leave_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.db.clear_data(self.guild_id, "leave_channel")
-        await interaction.response.send_message("✅ Leave Channel effacé.", ephemeral=True)
+        await interaction.response.send_message("Leave Channel effacé.", ephemeral=True)
 
-    @discord.ui.button(label="Join Message", style=discord.ButtonStyle.primary, emoji="🟡")
+    @discord.ui.button(label="Join Message", style=discord.ButtonStyle.primary)
     async def clear_join_msg(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.db.clear_data(self.guild_id, "welcome_message")
-        await interaction.response.send_message("✅ Join Message effacé.", ephemeral=True)
+        await interaction.response.send_message("Join Message effacé.", ephemeral=True)
 
-    @discord.ui.button(label="Leave Message", style=discord.ButtonStyle.primary, emoji="🟢")
+    @discord.ui.button(label="Leave Message", style=discord.ButtonStyle.primary)
     async def clear_leave_msg(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.db.clear_data(self.guild_id, "leave_message")
-        await interaction.response.send_message("✅ Leave Message effacé.", ephemeral=True)
+        await interaction.response.send_message("Leave Message effacé.", ephemeral=True)
 
-    @discord.ui.button(label="TOUT EFFACER", style=discord.ButtonStyle.danger, emoji="⛔", row=1)
+    @discord.ui.button(label="TOUT EFFACER", style=discord.ButtonStyle.danger, row=1)
     async def clear_all(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.db.clear_data(self.guild_id, "all")
-        await interaction.response.send_message("✅ TOUTES les données ont été effacées.", ephemeral=True)
+        await interaction.response.send_message("TOUTES les données ont été effacées.", ephemeral=True)
         self.stop()
 
 async def main():
@@ -276,7 +277,7 @@ async def main():
         await bot.add_cog(WelcomeBotAdvanced(bot))
         TOKEN = os.getenv("DISCORD_BOT_TOKEN")
         if not TOKEN:
-            print("❌ Token manquant!")
+            print("Token manquant!")
             return
         await bot.start(TOKEN)
 

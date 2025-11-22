@@ -40,7 +40,10 @@ class ScheduledTasks(commands.Cog):
         three_days = 3 * 24 * 3600
         
         for user_data in users:
-            user_id, _, _, expires_at_ts, revoked = user_data
+            # Unpack only what we need, ignore the rest (is_vip, last_crash_notification, last_expiry_notification)
+            user_id = user_data['id']
+            expires_at_ts = user_data['expires_at']
+            revoked = user_data['revoked']
             
             if revoked:
                 continue

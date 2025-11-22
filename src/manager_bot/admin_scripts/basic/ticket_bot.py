@@ -3,11 +3,12 @@
 
 SCRIPT_METADATA = {
     "name": "ticket_bot",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "min_manager_version": "1.0.0",
     "author": "Bot Manager",
     "description": "Système de tickets simple avec création de channels privés",
     "changelog": {
+        "1.1.1": "Suppression des emojis",
         "1.1.0": "Ajout commandes VIP (setstatus) et Help personnalisé",
         "1.0.0": "Version initiale"
     },
@@ -30,7 +31,7 @@ def is_vip(ctx):
 
 class CustomHelpCommand(commands.HelpCommand):
     async def send_bot_help(self, mapping):
-        embed = discord.Embed(title="🎫 Aide Ticket Bot", color=discord.Color.blue())
+        embed = discord.Embed(title="Aide Ticket Bot", color=discord.Color.blue())
         for cog, commands in mapping.items():
             if commands:
                 cog_name = cog.qualified_name if cog else "Commandes"
@@ -74,26 +75,26 @@ class TicketBot(commands.Cog):
             )
             
             embed = discord.Embed(
-                title=f"🎫 Ticket #{self.ticket_counter}",
+                title=f"Ticket #{self.ticket_counter}",
                 description=f"**Créé par:** {ctx.author.mention}\n**Raison:** {reason}",
                 color=discord.Color.blue()
             )
             embed.set_footer(text="Utilisez !close pour fermer ce ticket")
             
             await ticket_channel.send(embed=embed)
-            await ctx.send(f"✅ Ticket créé: {ticket_channel.mention}", delete_after=10)
+            await ctx.send(f"Ticket créé: {ticket_channel.mention}", delete_after=10)
             
         except Exception as e:
-            await ctx.send(f"❌ Erreur création ticket: {e}")
+            await ctx.send(f"Erreur création ticket: {e}")
     
     @commands.command(name='close')
     async def close_ticket(self, ctx):
         """Fermer un ticket (seulement dans un channel ticket)."""
         if not ctx.channel.name.startswith("ticket-"):
-            await ctx.send(f"❌ Cette commande ne fonctionne que dans un ticket.")
+            await ctx.send(f"Cette commande ne fonctionne que dans un ticket.")
             return
         
-        await ctx.send(f"🔒 Fermeture du ticket dans 5 secondes...")
+        await ctx.send(f"Fermeture du ticket dans 5 secondes...")
         await discord.utils.sleep_until(discord.utils.utcnow() + discord.timedelta(seconds=5))
         await ctx.channel.delete(reason=f"Ticket fermé par {ctx.author}")
 
@@ -101,18 +102,18 @@ class TicketBot(commands.Cog):
     async def set_status(self, ctx, status_type: str, *, message: str):
         """[VIP] Changer le statut (playing, watching, listening, streaming)."""
         if not is_vip(ctx):
-            return await ctx.send("❌ Réservé aux VIPs ou au propriétaire.")
+            return await ctx.send("Réservé aux VIPs ou au propriétaire.")
         
         try:
             activity_type = getattr(discord.ActivityType, status_type.lower(), discord.ActivityType.playing)
             await self.bot.change_presence(activity=discord.Activity(type=activity_type, name=message))
-            await ctx.send(f"✅ Statut mis à jour: **{status_type} {message}**")
+            await ctx.send(f"Statut mis à jour: **{status_type} {message}**")
         except AttributeError:
-            await ctx.send("❌ Type de statut invalide. Utilisez: playing, watching, listening, streaming")
+            await ctx.send("Type de statut invalide. Utilisez: playing, watching, listening, streaming")
     
     @commands.Cog.listener()
     async def on_ready(self):
-        print(f"🎫 Ticket Bot '{self.bot.user}' connecté!")
+        print(f"Ticket Bot '{self.bot.user}' connecté!")
         print("[BOT_MANAGER_SIGNAL] CONNEXION_REUSSIE")
 
 async def main():
@@ -120,7 +121,7 @@ async def main():
         await bot.add_cog(TicketBot(bot))
         TOKEN = os.getenv("DISCORD_BOT_TOKEN")
         if not TOKEN:
-            print("❌ Token manquant!")
+            print("Token manquant!")
             return
         await bot.start(TOKEN)
 

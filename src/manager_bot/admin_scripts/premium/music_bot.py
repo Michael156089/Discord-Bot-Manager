@@ -11,11 +11,12 @@ import sys
 
 SCRIPT_METADATA = {
     "name": "music_bot",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "min_manager_version": "1.0.0",
     "author": "Michael",
     "description": "Bot de musique avec gestion intelligente des nœuds Lavalink",
     "changelog": {
+        "1.1.1": "Suppression des emojis",
         "1.1.0": "Ajout commandes VIP (setstatus) et Help personnalisé",
         "1.0.0": "Version initiale avec système de fallback intelligent"
     },
@@ -31,7 +32,7 @@ SCRIPT_METADATA = {
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 if not TOKEN:
-    print("❌ ERREUR: Aucun token Discord trouvé dans les variables d'environnement.")
+    print("ERREUR: Aucun token Discord trouvé dans les variables d'environnement.")
     print("   Assurez-vous que le Bot Manager lance ce script correctement.")
     sys.exit(1)
 
@@ -41,7 +42,7 @@ def is_vip(ctx):
 
 class CustomHelpCommand(commands.HelpCommand):
     async def send_bot_help(self, mapping):
-        embed = discord.Embed(title="🎵 Aide Music Bot", color=discord.Color.blue())
+        embed = discord.Embed(title="Aide Music Bot", color=discord.Color.blue())
         for cog, commands in mapping.items():
             if commands:
                 cog_name = cog.qualified_name if cog else "Commandes"
@@ -109,7 +110,7 @@ class IntelligentNodeManager:
         return False
 
     async def find_best_nodes(self):
-        print("🔍 Test des serveurs Lavalink...")
+        print("Test des serveurs Lavalink...")
         tasks = [self.test_node_latency(node) for node in self.nodes]
         await asyncio.gather(*tasks, return_exceptions=True)
         
@@ -119,9 +120,9 @@ class IntelligentNodeManager:
         if available_nodes:
             self.primary_node = available_nodes[0]
             self.fallback_nodes = available_nodes[1:4]
-            print(f"✅ Serveur principal: {self.primary_node.name} ({self.primary_node.latency:.0f}ms)")
+            print(f"Serveur principal: {self.primary_node.name} ({self.primary_node.latency:.0f}ms)")
         else:
-            print("❌ Aucun serveur Lavalink disponible!")
+            print("Aucun serveur Lavalink disponible!")
 
     async def connect_nodes(self, client):
         if not self.primary_node:
@@ -141,7 +142,7 @@ class IntelligentNodeManager:
             await wavelink.Pool.connect(client=client, nodes=wavelink_nodes)
             return True
         except Exception as e:
-            print(f"❌ Erreur connexion: {e}")
+            print(f"Erreur connexion: {e}")
             return False
 
     async def start_monitoring(self, bot):
@@ -151,7 +152,7 @@ class IntelligentNodeManager:
                 if self.primary_node:
                     is_healthy = await self.test_node_latency(self.primary_node)
                     if not is_healthy:
-                        print(f"⚠️ Nœud principal {self.primary_node.name} indisponible!")
+                        print(f"Nœud principal {self.primary_node.name} indisponible!")
                         await self.handle_node_failure(bot)
             except Exception as e:
                 print(f"Erreur monitoring: {e}")
@@ -160,7 +161,7 @@ class IntelligentNodeManager:
         try:
             await self.find_best_nodes()
             if self.primary_node:
-                print(f"🔄 Basculement vers {self.primary_node.name}")
+                print(f"Basculement vers {self.primary_node.name}")
         except Exception as e:
             print(f"Erreur lors du basculement: {e}")
 
@@ -181,7 +182,7 @@ class MusicCog(commands.Cog, name="Musique"):
         guild_id = channel.guild.id
         for attempt in range(retries):
             try:
-                print(f"🔌 Tentative de connexion {attempt + 1}/{retries} au salon {channel.name}")
+                print(f"Tentative de connexion {attempt + 1}/{retries} au salon {channel.name}")
                 current_timeout = timeout + (attempt * 10)
                 
                 if channel.guild.voice_client:
@@ -189,14 +190,14 @@ class MusicCog(commands.Cog, name="Musique"):
                     await asyncio.sleep(2)
                 
                 player = await channel.connect(cls=wavelink.Player, timeout=current_timeout, reconnect=True)
-                print(f"✅ Connecté avec succès au salon {channel.name}")
+                print(f"Connecté avec succès au salon {channel.name}")
                 
                 if guild_id in self.connection_retries:
                     del self.connection_retries[guild_id]
                 return player
                 
             except Exception as e:
-                print(f"❌ Erreur connexion (tentative {attempt + 1}): {e}")
+                print(f"Erreur connexion (tentative {attempt + 1}): {e}")
                 if attempt < retries - 1:
                     await asyncio.sleep(3)
         
@@ -226,7 +227,7 @@ class MusicCog(commands.Cog, name="Musique"):
     async def jouer(self, ctx: commands.Context, *, recherche: str):
         try:
             if not ctx.author.voice:
-                return await ctx.send("❌ Vous devez être dans un salon vocal.")
+                return await ctx.send("Vous devez être dans un salon vocal.")
 
             player = await self.ensure_voice_connection(ctx)
             
@@ -238,7 +239,7 @@ class MusicCog(commands.Cog, name="Musique"):
                 try:
                     tracks = await wavelink.Playable.search(recherche)
                 except:
-                    return await ctx.send(f"❌ Erreur lors de la recherche. Les serveurs de musique sont peut-être surchargés.")
+                    return await ctx.send(f"Erreur lors de la recherche. Les serveurs de musique sont peut-être surchargés.")
             
             if not tracks:
                 return await ctx.send(f"Aucun résultat trouvé pour `{recherche}`.")
@@ -247,14 +248,14 @@ class MusicCog(commands.Cog, name="Musique"):
             
             if not player.playing and player.queue.is_empty:
                 await player.play(track)
-                await ctx.send(f"▶️ Lecture de **{track.title}**")
+                await ctx.send(f"Lecture de **{track.title}**")
             else:
                 await player.queue.put_wait(track)
-                await ctx.send(f"👍 Ajouté à la file d'attente : **{track.title}**")
+                await ctx.send(f"Ajouté à la file d'attente : **{track.title}**")
                 
         except Exception as e:
             print(f"Erreur dans jouer: {e}")
-            await ctx.send(f"❌ Erreur : {str(e)}")
+            await ctx.send(f"Erreur : {str(e)}")
 
     @commands.command(name="arreter", aliases=['stop', 'leave'])
     async def arreter(self, ctx: commands.Context):
@@ -262,13 +263,13 @@ class MusicCog(commands.Cog, name="Musique"):
         if player:
             try:
                 await player.disconnect(force=True)
-                await ctx.send("⏹️ Déconnecté.")
+                await ctx.send("Déconnecté.")
             except Exception as e:
                 print(f"Erreur déconnexion: {e}")
                 # Force cleanup if wavelink fails
                 if ctx.guild.voice_client:
                     await ctx.guild.voice_client.disconnect(force=True)
-                await ctx.send("⏹️ Déconnecté (forcé).")
+                await ctx.send("Déconnecté (forcé).")
         else:
             await ctx.send("Le bot n'est pas connecté.")
 
@@ -276,14 +277,14 @@ class MusicCog(commands.Cog, name="Musique"):
     async def set_status(self, ctx, status_type: str, *, message: str):
         """[VIP] Changer le statut (playing, watching, listening, streaming)."""
         if not is_vip(ctx):
-            return await ctx.send("❌ Réservé aux VIPs ou au propriétaire.")
+            return await ctx.send("Réservé aux VIPs ou au propriétaire.")
         
         try:
             activity_type = getattr(discord.ActivityType, status_type.lower(), discord.ActivityType.playing)
             await self.bot.change_presence(activity=discord.Activity(type=activity_type, name=message))
-            await ctx.send(f"✅ Statut mis à jour: **{status_type} {message}**")
+            await ctx.send(f"Statut mis à jour: **{status_type} {message}**")
         except AttributeError:
-            await ctx.send("❌ Type de statut invalide. Utilisez: playing, watching, listening, streaming")
+            await ctx.send("Type de statut invalide. Utilisez: playing, watching, listening, streaming")
 
 class MusicBot(commands.Bot):
     def __init__(self):
@@ -298,11 +299,11 @@ class MusicBot(commands.Bot):
         await self.node_manager.find_best_nodes()
         success = await self.node_manager.connect_nodes(self)
         if not success:
-            print("❌ Impossible de se connecter aux serveurs Lavalink!")
+            print("Impossible de se connecter aux serveurs Lavalink!")
         await self.add_cog(MusicCog(self))
 
     async def on_ready(self):
-        print(f'🎵 Bot connecté en tant que {self.user}')
+        print(f'Bot connecté en tant que {self.user}')
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

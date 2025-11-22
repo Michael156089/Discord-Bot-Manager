@@ -52,6 +52,7 @@ def _setup_bot_environment(user_id: int, bot_name: str, decrypted_token: str):
     
     env = os.environ.copy()
     env["DISCORD_BOT_TOKEN"] = decrypted_token
+    env["DISCORD_TOKEN"] = decrypted_token  # Compatibilité avec les scripts utilisant DISCORD_TOKEN
     env["PYTHONPATH"] = user_bot_scripts_dir + os.pathsep + env.get("PYTHONPATH", "")
     env["PYTHONUNBUFFERED"] = "1"
 

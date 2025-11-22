@@ -1,5 +1,3 @@
-# Template: Music Bot
-# Fonctionnalités basiques de musique (sans voice support car complexe)
 
 import discord
 from discord.ext import commands

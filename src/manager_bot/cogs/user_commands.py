@@ -52,6 +52,11 @@ class UserCommands(commands.Cog):
         if os.path.exists(basic_scripts_dir):
             basic_scripts = [f for f in os.listdir(basic_scripts_dir) if f.endswith('.py')]
         
+        # Check if user is VIP
+        from ..database import get_user
+        user_data = await get_user(user_id)
+        is_vip = user_data and user_data['is_vip'] == 1
+        
         allowed_premium = await get_user_allowed_scripts(user_id)
         
         all_scripts = []
@@ -66,15 +71,28 @@ class UserCommands(commands.Cog):
         
         premium_scripts_dir = os.path.join(SCRIPTS_ADMIN_DIR, "premium")
         if os.path.exists(premium_scripts_dir):
-            for script in allowed_premium:
-                script_path = os.path.join(premium_scripts_dir, script)
-                if os.path.exists(script_path):
+            # VIP users get ALL premium scripts
+            if is_vip:
+                all_premium_scripts = [f for f in os.listdir(premium_scripts_dir) if f.endswith('.py')]
+                for script in all_premium_scripts:
+                    script_path = os.path.join(premium_scripts_dir, script)
                     all_scripts.append({
                         "name": script,
-                        "display": f"[PREMIUM] {script}",
+                        "display": f"[PREMIUM VIP] {script}",
                         "type": "premium",
                         "path": script_path
                     })
+            else:
+                # Non-VIP users only get explicitly granted scripts
+                for script in allowed_premium:
+                    script_path = os.path.join(premium_scripts_dir, script)
+                    if os.path.exists(script_path):
+                        all_scripts.append({
+                            "name": script,
+                            "display": f"[PREMIUM] {script}",
+                            "type": "premium",
+                            "path": script_path
+                        })
         
         return all_scripts
 
@@ -304,11 +322,11 @@ class UserCommands(commands.Cog):
 
         try:
             if await start_bot_process(user_id, nom, bot_data[3], bot_data[4]):
-                await ctx.edit_original_response(content=f"Bot `{nom}` démarré. En attente de sa connexion à Discord...") 
+                await ctx.send(f"Bot `{nom}` démarré. En attente de sa connexion à Discord...", ephemeral=True)
             else:
-                await ctx.edit_original_response(content=f"Impossible de démarrer le bot `{nom}`. Vérifiez les logs pour plus de détails: `logs/{user_id}/{nom}.log`")
+                await ctx.send(f"Impossible de démarrer le bot `{nom}`. Vérifiez les logs pour plus de détails: `logs/{user_id}/{nom}.log`", ephemeral=True)
         except Exception as e:
-            await ctx.edit_original_response(content=f"Erreur inattendue : `{e}`. Consultez `logs/{user_id}/{nom}.log`.") 
+            await ctx.send(f"Erreur inattendue : `{e}`. Consultez `logs/{user_id}/{nom}.log`.", ephemeral=True) 
 
     @commands.hybrid_command(name="stop_bot", description="Arrêter un de vos bots")
     @app_commands.describe(nom="Nom du bot")
@@ -334,9 +352,9 @@ class UserCommands(commands.Cog):
 
         if stop_bot_process(user_id, nom):
             await update_bot_status(user_id, nom, "stopped")
-            await ctx.edit_original_response(content=f"Bot `{nom}` arrêté.") 
+            await ctx.send(f"Bot `{nom}` arrêté.", ephemeral=True)
         else:
-            await ctx.edit_original_response(content=f"Impossible d'arrêter le bot `{nom}`.") 
+            await ctx.send(f"Impossible d'arrêter le bot `{nom}`.", ephemeral=True)
 
     @commands.hybrid_command(name="restart_bot", description="Redémarrer un de vos bots")
     @app_commands.describe(nom="Nom du bot")
@@ -376,11 +394,11 @@ class UserCommands(commands.Cog):
 
         try:
             if await start_bot_process(user_id, nom, bot_data[3], bot_data[4]):
-                await ctx.edit_original_response(content=f"Bot `{nom}` redémarré. En attente de sa connexion à Discord...") 
+                await ctx.send(f"Bot `{nom}` redémarré. En attente de sa connexion à Discord...", ephemeral=True)
             else:
-                await ctx.edit_original_response(content=f"Impossible de redémarrer le bot `{nom}` {fail_emoji}")
+                await ctx.send(f"Impossible de redémarrer le bot `{nom}` {fail_emoji}", ephemeral=True)
         except Exception as e:
-            await ctx.edit_original_response(content=f"Erreur inattendue lors du redémarrage : `{e}`.") 
+            await ctx.send(f"Erreur inattendue lors du redémarrage : `{e}`.", ephemeral=True)
 
     @commands.hybrid_command(name="update_token", description="Mettre à jour le token d'un de vos bots")
     @app_commands.describe(nom="Nom du bot", new_token="Nouveau token")
@@ -499,11 +517,11 @@ class UserCommands(commands.Cog):
 
         try:
             if await start_bot_process(user_id, nom, bot_data[3], bot_data[4]):
-                await ctx.edit_original_response(content=f"Bot `{nom}` démarré. En attente de sa connexion à Discord...") 
+                await ctx.send(f"Bot `{nom}` démarré. En attente de sa connexion à Discord...", ephemeral=True)
             else:
-                await ctx.edit_original_response(content=f"Impossible de démarrer le bot `{nom}`. Vérifiez les logs pour plus de détails: `logs/{user_id}/{nom}.log`")
+                await ctx.send(f"Impossible de démarrer le bot `{nom}`. Vérifiez les logs pour plus de détails: `logs/{user_id}/{nom}.log`", ephemeral=True)
         except Exception as e:
-            await ctx.edit_original_response(content=f"Erreur inattendue : `{e}`. Consultez `logs/{user_id}/{nom}.log`.") 
+            await ctx.send(f"Erreur inattendue : `{e}`. Consultez `logs/{user_id}/{nom}.log`.", ephemeral=True) 
 
     @commands.hybrid_command(name="stop_bot", description="Arrêter un de vos bots")
     @app_commands.describe(nom="Nom du bot")
@@ -529,9 +547,9 @@ class UserCommands(commands.Cog):
 
         if stop_bot_process(user_id, nom):
             await update_bot_status(user_id, nom, "stopped")
-            await ctx.edit_original_response(content=f"Bot `{nom}` arrêté.") 
+            await ctx.send(f"Bot `{nom}` arrêté.", ephemeral=True)
         else:
-            await ctx.edit_original_response(content=f"Impossible d'arrêter le bot `{nom}`.") 
+            await ctx.send(f"Impossible d'arrêter le bot `{nom}`.", ephemeral=True)
 
     @commands.hybrid_command(name="restart_bot", description="Redémarrer un de vos bots")
     @app_commands.describe(nom="Nom du bot")
@@ -571,11 +589,11 @@ class UserCommands(commands.Cog):
 
         try:
             if await start_bot_process(user_id, nom, bot_data[3], bot_data[4]):
-                await ctx.edit_original_response(content=f"Bot `{nom}` redémarré. En attente de sa connexion à Discord...") 
+                await ctx.send(f"Bot `{nom}` redémarré. En attente de sa connexion à Discord...", ephemeral=True)
             else:
-                await ctx.edit_original_response(content=f"Impossible de redémarrer le bot `{nom}` {fail_emoji}")
+                await ctx.send(f"Impossible de redémarrer le bot `{nom}` {fail_emoji}", ephemeral=True)
         except Exception as e:
-            await ctx.edit_original_response(content=f"Erreur inattendue lors du redémarrage : `{e}`.") 
+            await ctx.send(f"Erreur inattendue lors du redémarrage : `{e}`.", ephemeral=True)
 
     @commands.hybrid_command(name="update_token", description="Mettre à jour le token d'un de vos bots")
     @app_commands.describe(nom="Nom du bot", new_token="Nouveau token")
