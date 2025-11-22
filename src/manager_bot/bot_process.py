@@ -166,6 +166,8 @@ def get_bot_status(user_id: int, bot_name: str) -> str:
     
     return "running" if is_connected else "starting"
 
+from .database import get_bot
+
 async def monitor_processes(bot):
     """Surveille les processus et détecte la connexion Discord."""
     await asyncio.sleep(5)
@@ -185,10 +187,39 @@ async def monitor_processes(bot):
                     
                     record_crash(user_id, bot_name)
                     
+                    # Tenter de notifier l'utilisateur
+                    discord_user = bot.get_user(user_id)
+                    if not discord_user:
+                        try:
+                            discord_user = await bot.fetch_user(user_id)
+                        except:
+                            pass
+
                     if should_auto_restart(user_id, bot_name):
-                        print(f"🔄 '{bot_name}' pourra être redémarré automatiquement")
+                        print(f"🔄 Tentative de redémarrage auto pour '{bot_name}'...")
+                        bot_data = await get_bot(user_id, bot_name)
+                        
+                        if bot_data:
+                            # Attendre un peu avant de redémarrer
+                            await asyncio.sleep(2)
+                            success = await start_bot_process(user_id, bot_name, bot_data[3], bot_data[4])
+                            
+                            if success:
+                                if discord_user:
+                                    try:
+                                        await discord_user.send(f"⚠️ Votre bot `{bot_name}` a crashé (code {proc.returncode}) mais a été redémarré automatiquement.")
+                                    except: pass
+                            else:
+                                if discord_user:
+                                    try:
+                                        await discord_user.send(f"❌ Votre bot `{bot_name}` a crashé et le redémarrage automatique a échoué. Vérifiez les logs.")
+                                    except: pass
                     else:
                         print(f"🛑 Bot '{bot_name}' a crashé trop souvent. Redémarrage automatique désactivé.")
+                        if discord_user:
+                            try:
+                                await discord_user.send(f"🛑 Votre bot `{bot_name}` a crashé trop souvent (3 fois en 10min). Redémarrage automatique désactivé. Veuillez vérifier votre code et vos logs.")
+                            except: pass
                         
                 continue
             
@@ -210,4 +241,10 @@ async def monitor_processes(bot):
                         pass
         
         for key in to_delete:
-            del active_processes[key]
+            if key in active_processes: # Vérifier si pas déjà supprimé ou redémarré (si redémarré, la clé est recréée mais avec un nouveau process)
+                # Ici active_processes[key] contient le VIEUX process si on n'a pas redémarré
+                # Si on a redémarré, active_processes[key] contient le NOUVEAU process
+                # Donc on ne doit supprimer que si le process dans active_processes est celui qui est mort
+                current_proc, _ = active_processes[key]
+                if current_proc.returncode is not None:
+                     del active_processes[key]
