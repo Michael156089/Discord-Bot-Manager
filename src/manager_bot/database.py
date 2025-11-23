@@ -1,31 +1,29 @@
 import aiosqlite
-from .config import DB_PATH
+from .config import db_file
 import secrets
 import time
 
-_db_connection = None
+# global connection
+conn = None
 
 async def get_db():
-    """Get or create a singleton DB connection."""
-    global _db_connection
-    if _db_connection is None:
-        _db_connection = await aiosqlite.connect(DB_PATH)
-        _db_connection.row_factory = aiosqlite.Row
-    return _db_connection
+    global conn
+    if conn is None:
+        conn = await aiosqlite.connect(db_file)
+        conn.row_factory = aiosqlite.Row
+    return conn
 
 async def close_db():
-    """Close the database connection."""
-    global _db_connection
-    if _db_connection:
-        await _db_connection.close()
-        _db_connection = None
-        print("Database connection closed.")
+    global conn
+    if conn:
+        await conn.close()
+        conn = None
+        print("db closed")
 
 async def init_db():
-    """Initialize the database."""
     db = await get_db()
     
-    # Users table with is_vip
+    # users table
     await db.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY,
@@ -39,7 +37,7 @@ async def init_db():
         )
     """)
     
-    # Bots table
+    # bots table
     await db.execute("""
         CREATE TABLE IF NOT EXISTS bots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,7 +50,7 @@ async def init_db():
         )
     """)
     
-    # Secrets table
+    # secrets table
     await db.execute("""
         CREATE TABLE IF NOT EXISTS secrets (
             id TEXT PRIMARY KEY,
@@ -63,7 +61,7 @@ async def init_db():
         )
     """)
     
-    # User Scripts table
+    # user scripts
     await db.execute("""
         CREATE TABLE IF NOT EXISTS user_scripts (
             user_id INTEGER,
@@ -75,7 +73,7 @@ async def init_db():
         )
     """)
 
-    # Audit Logs table
+    # audit logs
     await db.execute("""
     CREATE TABLE IF NOT EXISTS audit_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,27 +85,25 @@ async def init_db():
     )
     """)
     
-    # Versioning tables
+    # versioning
     from .script_version_db import init_versioning_tables
     await init_versioning_tables()
     
     await db.commit()
 
-async def create_secret(user_id: int, max_bots: int) -> str:
-    """Create a secret in SQL database."""
+async def create_secret(user_id, max_bots):
     db = await get_db()
-    secret_id = secrets.token_urlsafe(32)
+    secret = secrets.token_urlsafe(32)
     now = time.time()
     
     await db.execute(
         "INSERT INTO secrets (id, user_id, max_bots, created_at, used) VALUES (?, ?, ?, ?, 0)",
-        (secret_id, user_id, max_bots, now)
+        (secret, user_id, max_bots, now)
     )
     await db.commit()
-    return secret_id
+    return secret
 
-async def validate_secret(secret_id: str):
-    """Validate a secret and check if it's expired."""
+async def validate_secret(secret_id):
     db = await get_db()
     
     cursor = await db.execute(
@@ -117,21 +113,20 @@ async def validate_secret(secret_id: str):
     row = await cursor.fetchone()
     
     if not row:
-        return None, "Secret invalide ou expiré."
+        return None, "Invalid secret."
     
     user_id, max_bots, created_at, used = row
     
     if used:
-        return None, "Ce secret a déjà été utilisé."
+        return None, "Secret already used."
     
     now = time.time()
     if now - created_at > (24 * 3600):
-        return None, "Ce secret a expiré (24 heures)."
+        return None, "Secret expired."
     
     return {"user_id": user_id, "max_bots": max_bots}, None
 
-async def consume_secret(secret_id: str):
-    """Mark secret as used in database."""
+async def consume_secret(secret_id):
     db = await get_db()
     await db.execute(
         "UPDATE secrets SET used = 1 WHERE id = ?",
@@ -140,33 +135,30 @@ async def consume_secret(secret_id: str):
     await db.commit()
 
 async def delete_expired_secrets():
-    """Delete secrets older than 24 hours."""
     db = await get_db()
     now = time.time()
-    expiry_threshold = now - (24 * 3600)
+    limit = now - (24 * 3600)
     
     await db.execute(
         "DELETE FROM secrets WHERE created_at < ?",
-        (expiry_threshold,)
+        (limit,)
     )
     await db.commit()
-    print(f"Expired secrets cleaned up at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print("cleaned secrets")
 
-async def register_user(user_id: int, max_bots: int):
-    """Register a user with 30-day expiration."""
+async def register_user(user_id, max_bots):
     db = await get_db()
     now = time.time()
-    expires_at = now + (30 * 24 * 3600)
+    expires = now + (30 * 24 * 3600)
     
     await db.execute(
         "INSERT OR REPLACE INTO users (id, max_bots, registered_at, expires_at, revoked, is_vip) VALUES (?, ?, ?, ?, 0, 0)",
-        (user_id, max_bots, now, expires_at)
+        (user_id, max_bots, now, expires)
     )
     await db.commit()
-    print(f"User {user_id} registered until {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expires_at))}")
+    print(f"user {user_id} registered")
 
-async def get_user(user_id: int):
-    """Get user and check if expired."""
+async def get_user(user_id):
     db = await get_db()
     cursor = await db.execute(
         "SELECT id, max_bots, registered_at, expires_at, revoked, is_vip FROM users WHERE id = ? AND revoked = 0",
@@ -178,27 +170,25 @@ async def get_user(user_id: int):
         return None
     
     now = time.time()
-    if now > row[3]:  # expires_at
+    if now > row[3]:
         await revoke_user(user_id)
         return None
     
     return row
 
-async def set_vip_status(user_id: int, is_vip: bool):
-    """Set VIP status for a user."""
+async def set_vip_status(user_id, is_vip):
     db = await get_db()
-    await db.execute("UPDATE users SET is_vip = ? WHERE id = ?", (1 if is_vip else 0, user_id))
+    val = 1 if is_vip else 0
+    await db.execute("UPDATE users SET is_vip = ? WHERE id = ?", (val, user_id))
     await db.commit()
 
 async def get_vip_users():
-    """Get list of all VIP user IDs."""
     db = await get_db()
     async with db.execute("SELECT id FROM users WHERE is_vip = 1") as cursor:
         rows = await cursor.fetchall()
         return [row[0] for row in rows]
 
 async def delete_expired_users():
-    """Automatically revoke expired users."""
     db = await get_db()
     now = time.time()
     
@@ -206,14 +196,13 @@ async def delete_expired_users():
         "SELECT id FROM users WHERE expires_at < ? AND revoked = 0",
         (now,)
     )
-    expired_users = await cursor.fetchall()
+    expired = await cursor.fetchall()
     
-    for (user_id,) in expired_users:
-        print(f"Revoking expired user {user_id}")
-        await revoke_user(user_id)
+    for (uid,) in expired:
+        print(f"revoking {uid}")
+        await revoke_user(uid)
 
-async def revoke_user(user_id: int):
-    """Mark user as revoked and stop all their bots."""
+async def revoke_user(user_id):
     db = await get_db()
     
     cursor = await db.execute(
@@ -222,23 +211,22 @@ async def revoke_user(user_id: int):
     )
     bots = await cursor.fetchall()
     
-    for (bot_name,) in bots:
+    for (bname,) in bots:
         from .bot_process import stop_bot_process
-        stop_bot_process(user_id, bot_name)
+        stop_bot_process(user_id, bname)
     
     await db.execute(
         "UPDATE users SET revoked = 1 WHERE id = ?",
         (user_id,)
     )
-    # Delete associated user scripts entries
     await db.execute(
         "DELETE FROM user_scripts WHERE user_id = ?",
         (user_id,)
     )
     await db.commit()
-    print(f"User {user_id} revoked (all bots stopped and scripts access cleared)")
+    print(f"user {user_id} revoked")
 
-async def add_bot_to_db(user_id: int, bot_name: str, bot_token: str, script: str):
+async def add_bot_to_db(user_id, bot_name, bot_token, script):
     db = await get_db()
     await db.execute(
         "INSERT INTO bots (user_id, bot_name, bot_token, script) VALUES (?, ?, ?, ?)",
@@ -246,12 +234,12 @@ async def add_bot_to_db(user_id: int, bot_name: str, bot_token: str, script: str
     )
     await db.commit()
 
-async def get_user_bots(user_id: int):
+async def get_user_bots(user_id):
     db = await get_db()
     async with db.execute("SELECT * FROM bots WHERE user_id = ?", (user_id,)) as cursor:
         return await cursor.fetchall()
 
-async def get_bot(user_id: int, bot_name: str):
+async def get_bot(user_id, bot_name):
     db = await get_db()
     async with db.execute(
         "SELECT * FROM bots WHERE user_id = ? AND bot_name = ?", 
@@ -259,7 +247,7 @@ async def get_bot(user_id: int, bot_name: str):
     ) as cursor:
         return await cursor.fetchone()
 
-async def update_bot_status(user_id: int, bot_name: str, status: str):
+async def update_bot_status(user_id, bot_name, status):
     db = await get_db()
     await db.execute(
         "UPDATE bots SET status = ? WHERE user_id = ? AND bot_name = ?",
@@ -267,7 +255,7 @@ async def update_bot_status(user_id: int, bot_name: str, status: str):
     )
     await db.commit()
 
-async def update_bot_token(user_id: int, bot_name: str, new_token: str):
+async def update_bot_token(user_id, bot_name, new_token):
     db = await get_db()
     await db.execute(
         "UPDATE bots SET bot_token = ? WHERE user_id = ? AND bot_name = ?",
@@ -275,7 +263,7 @@ async def update_bot_token(user_id: int, bot_name: str, new_token: str):
     )
     await db.commit()
 
-async def delete_bot(user_id: int, bot_name: str):
+async def delete_bot(user_id, bot_name):
     db = await get_db()
     await db.execute(
         "DELETE FROM bots WHERE user_id = ? AND bot_name = ?",
@@ -288,21 +276,19 @@ async def get_all_users():
     async with db.execute("SELECT * FROM users") as cursor:
         return await cursor.fetchall()
 
-async def renew_user_account(user_id: int, max_bots: int):
-    """Renew an expired user account for another 30 days."""
+async def renew_user_account(user_id, max_bots):
     db = await get_db()
     now = time.time()
-    expires_at = now + (30 * 24 * 3600)
+    expires = now + (30 * 24 * 3600)
     
     await db.execute(
         "UPDATE users SET expires_at = ?, revoked = 0 WHERE id = ?",
-        (expires_at, user_id)
+        (expires, user_id)
     )
     await db.commit()
-    print(f"User {user_id} account renewed until {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expires_at))}")
+    print(f"user {user_id} renewed")
 
-async def grant_script_access(user_id: int, script_name: str, granted_by: int):
-    """Accorder l'accès à un script spécial pour un utilisateur."""
+async def grant_script_access(user_id, script_name, granted_by):
     db = await get_db()
     now = time.time()
     
@@ -311,10 +297,9 @@ async def grant_script_access(user_id: int, script_name: str, granted_by: int):
         (user_id, script_name, now, granted_by)
     )
     await db.commit()
-    print(f"Script '{script_name}' granted to user {user_id} by admin {granted_by}")
+    print(f"script {script_name} given to {user_id}")
 
-async def revoke_script_access(user_id: int, script_name: str):
-    """Révoquer l'accès à un script spécial."""
+async def revoke_script_access(user_id, script_name):
     db = await get_db()
     
     await db.execute(
@@ -322,10 +307,9 @@ async def revoke_script_access(user_id: int, script_name: str):
         (user_id, script_name)
     )
     await db.commit()
-    print(f"Script '{script_name}' revoked from user {user_id}")
+    print(f"script {script_name} removed from {user_id}")
 
-async def get_user_allowed_scripts(user_id: int):
-    """Obtenir la liste des scripts autorisés pour un utilisateur."""
+async def get_user_allowed_scripts(user_id):
     db = await get_db()
     
     cursor = await db.execute(
@@ -335,8 +319,7 @@ async def get_user_allowed_scripts(user_id: int):
     rows = await cursor.fetchall()
     return [row[0] for row in rows]
 
-async def is_script_allowed(user_id: int, script_name: str) -> bool:
-    """Vérifier si un utilisateur a accès à un script."""
+async def is_script_allowed(user_id, script_name):
     db = await get_db()
     
     cursor = await db.execute(
@@ -346,9 +329,7 @@ async def is_script_allowed(user_id: int, script_name: str) -> bool:
     row = await cursor.fetchone()
     return row is not None
 
-
-async def log_admin_action(admin_id: int, action: str, target_user_id: int = None, details: str = None):
-    """Log an admin action for audit trail."""
+async def log_admin_action(admin_id, action, target_user_id=None, details=None):
     db = await get_db()
     now = time.time()
     
@@ -357,10 +338,9 @@ async def log_admin_action(admin_id: int, action: str, target_user_id: int = Non
         (now, admin_id, action, target_user_id, details)
     )
     await db.commit()
-    print(f"Audit: Admin {admin_id} performed '{action}' on user {target_user_id}")
+    print(f"admin {admin_id} did {action}")
 
-async def get_audit_logs(limit: int = 50):
-    """Retrieve recent audit logs."""
+async def get_audit_logs(limit=50):
     db = await get_db()
     
     cursor = await db.execute(
@@ -369,8 +349,7 @@ async def get_audit_logs(limit: int = 50):
     )
     return await cursor.fetchall()
 
-async def update_crash_notification_time(user_id: int):
-    """Update the last crash notification timestamp for a user."""
+async def update_crash_notification_time(user_id):
     db = await get_db()
     now = time.time()
     
@@ -380,8 +359,7 @@ async def update_crash_notification_time(user_id: int):
     )
     await db.commit()
 
-async def update_expiry_notification_time(user_id: int):
-    """Update the last expiry warning notification timestamp for a user."""
+async def update_expiry_notification_time(user_id):
     db = await get_db()
     now = time.time()
     
@@ -391,8 +369,7 @@ async def update_expiry_notification_time(user_id: int):
     )
     await db.commit()
 
-async def get_users_needing_expiry_warning(days_before: int = 5):
-    """Get users whose accounts expire soon and haven't been warned recently."""
+async def get_users_needing_expiry_warning(days_before=5):
     db = await get_db()
     now = time.time()
     warning_threshold = now + (days_before * 24 * 3600)

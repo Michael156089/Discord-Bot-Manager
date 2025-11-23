@@ -1,41 +1,41 @@
 import os
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
-import asyncio
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", ".env"))
+# load the env file
+load_dotenv()
 
-BOT_MANAGER_TOKEN = os.getenv("BOT_MANAGER_TOKEN")
-ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
-ADMIN_IDS = [int(i) for i in os.getenv("ADMIN_IDS", "").split(",") if i.strip()]
-USERS_DIR = os.getenv("USERS_DIR", os.path.join(os.path.dirname(__file__), "users"))
-SCRIPTS_ADMIN_DIR = os.getenv("SCRIPTS_ADMIN_DIR", os.path.join(os.path.dirname(__file__), "admin_scripts"))
+# get variables
+token = os.getenv("BOT_MANAGER_TOKEN")
+key = os.getenv("ENCRYPTION_KEY")
+admin_list = os.getenv("ADMIN_IDS")
 
-if not BOT_MANAGER_TOKEN or BOT_MANAGER_TOKEN == "VOTRE_TOKEN_BOT_MANAGER":
-    raise EnvironmentError("BOT_MANAGER_TOKEN not set in environment (.env).")
+if not key:
+    key = Fernet.generate_key().decode()
+    print("Warning: No key found, using generated key.")
 
-if not ENCRYPTION_KEY:
-    raise EnvironmentError("ENCRYPTION_KEY not set in environment (.env). Provide a fixed key to persist encrypted tokens across restarts.")
+# make the key thing
+cipher = Fernet(key.encode())
 
-cipher = Fernet(ENCRYPTION_KEY.encode())
+# folders
+base_dir = os.path.dirname(os.path.abspath(__file__))
+users_folder = os.path.join(base_dir, "utilisateurs")
+logs_folder = os.path.join(base_dir, "logs")
+data_folder = os.path.join(base_dir, "data")
+admin_scripts_folder = os.path.join(base_dir, "admin_scripts")
+db_file = os.path.join(data_folder, "bot_manager.db")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# make folders if they dont exist
+if not os.path.exists(users_folder):
+    os.makedirs(users_folder)
+if not os.path.exists(logs_folder):
+    os.makedirs(logs_folder)
+if not os.path.exists(data_folder):
+    os.makedirs(data_folder)
+if not os.path.exists(admin_scripts_folder):
+    os.makedirs(admin_scripts_folder)
 
-SCRIPTS_ADMIN_DIR = os.path.join(BASE_DIR, "admin_scripts")
-
-USERS_DIR = os.path.join(BASE_DIR, "utilisateurs")
-LOGS_DIR = os.path.join(BASE_DIR, "logs")
-DATA_DIR = os.path.join(BASE_DIR, "data")
-SCRIPTS_ADMIN_DIR = os.path.join(BASE_DIR, "admin_scripts")
-DB_PATH = os.path.join(DATA_DIR, "bot_manager.db")
-ADMIN_SCRIPTS_DIR = SCRIPTS_ADMIN_DIR  
-USER_SCRIPTS_DIR = os.path.join(BASE_DIR, "user_scripts")
-
-for directory in [USERS_DIR, LOGS_DIR, DATA_DIR, SCRIPTS_ADMIN_DIR]:
-    os.makedirs(directory, exist_ok=True)
-
-async def shutdown_handler():
-    """Clean up resources on bot shutdown."""
+async def cleanup():
+    print("cleaning up...")
     from .database import close_db
     await close_db()
-    print("Cleanup complete.")

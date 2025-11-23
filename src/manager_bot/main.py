@@ -1,15 +1,14 @@
-
 import discord
 from discord.ext import commands
 import asyncio
 import os
 
-from .config import BOT_MANAGER_TOKEN
+from .config import token
 from .database import init_db, delete_expired_secrets, delete_expired_users
-from .bot_process import monitor_processes, active_processes
 from .resource_monitor import monitor_bot_resources
 from .utils import cleanup_expired_cooldowns, cleanup_expired_cache
 from .script_version_db import init_versioning_tables
+from .bot_process import monitor_processes, active_processes, get_bot_status
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -24,7 +23,6 @@ class ManagerBot(commands.Bot):
             "src.manager_bot.cogs.admin_commands",
             "src.manager_bot.cogs.user_commands",
             "src.manager_bot.cogs.general_commands",
-            "src.manager_bot.cogs.phase2_commands",
             "src.manager_bot.cogs.tasks",
             "src.manager_bot.cogs.help_command",
             "src.manager_bot.cogs.script_management"
@@ -33,27 +31,27 @@ class ManagerBot(commands.Bot):
         for ext in extensions:
             try:
                 await self.load_extension(ext)
-                print(f"Extension chargée: {ext}")
+                print(f"Extension loaded: {ext}")
             except Exception as e:
-                print(f"Erreur chargement extension {ext}: {e}")
+                print(f"Error loading extension {ext}: {e}")
         
         await init_db()
         await init_versioning_tables()  
-        print("Base de données initialisée.")
+        print("Database initialized.")
         
         self.loop.create_task(monitor_processes(self))
         self.loop.create_task(monitor_bot_resources(active_processes, self))
         self.loop.create_task(self.cleanup_tasks())
 
     async def on_ready(self):
-        print(f"Bot Manager connecté: {self.user}")
+        print(f"Bot Manager connected: {self.user}")
         try:
             synced = await self.tree.sync()
-            print(f"Synchronisé {len(synced)} commandes slash.")
+            print(f"Synced {len(synced)} slash commands.")
             for cmd in synced:
                 print(f"  - /{cmd.name}")
         except Exception as e:
-            print(f"Erreur sync commandes: {e}")
+            print(f"Error syncing commands: {e}")
 
     async def cleanup_tasks(self):
         while True:

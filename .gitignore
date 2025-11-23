@@ -2,3 +2,12 @@
 .env
 # optionally ignore logs or other sensitive data
 logs/
+__pycache__/
+*.db
+*.log
+.qodo/
+src/manager_bot/data/
+src/manager_bot/logs/
+src/manager_bot/utilisateurs/
+src/manager_bot/admin_scripts/
+*.gz

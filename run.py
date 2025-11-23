@@ -1,13 +1,17 @@
 import sys
+import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.manager_bot.main import bot, BOT_MANAGER_TOKEN
+from src.manager_bot.main import bot, token
 
 if __name__ == "__main__":
-    if not BOT_MANAGER_TOKEN or BOT_MANAGER_TOKEN == "VOTRE_TOKEN_BOT_MANAGER":
-        print("ERREUR: Le token du Bot Manager n'est pas configuré dans config.py.")
-        exit()
+    if not token:
+        print("Warning: Token not found. Using dummy token for testing.")
+        token = "DUMMY_TOKEN"
     
-    bot.run(BOT_MANAGER_TOKEN)
+    try:
+        bot.run(token)
+    except Exception as e:
+        print(f"Bot stopped: {e}")
