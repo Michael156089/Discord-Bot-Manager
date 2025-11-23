@@ -70,6 +70,6 @@ You can offer different scripts to your users.
 
 If you like this project and want to support its development, you can:
 -   **Star** this repository on GitHub ⭐
--   **Donate** via [PayPal](https://www.paypal.me/MicaPaul138) or [GitHub Sponsors](https://github.com/sponsors/Michael156089)
+-   **Donate** via [PayPal](https://www.paypal.me/MicaPaul138) or
 -   **Crypto (USDT Tether)**: `0xed3b8597fbc4a8724907d1839ed465c19172ff5d`
 -   Share it with your friends!
